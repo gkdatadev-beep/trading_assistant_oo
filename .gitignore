@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Data (runtime state, not source)
+data/*.json
+data/*.csv
+data/*.log
+data/*.png
+data/session_state.json
+!data/runtime_config.template.json
+
+# Keep directory structure
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Grafico do Dia — Trade Assistant</title>
+  <style>
+    :root {
+      --bg: #0b1118; --panel: #14202b; --line: rgba(148,163,184,0.2);
+      --text: #e6eef6; --muted: #90a4b8; --accent: #2d7ce3; --red: #ef6b5a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: Segoe UI, Arial, sans-serif; }
+    .shell { max-width: 1100px; margin: 0 auto; padding: 18px; }
+    h1 { font-size: 20px; margin-bottom: 10px; }
+    .card { border:1px solid var(--line); border-radius:14px; background:var(--panel); padding:14px; margin-bottom:12px; }
+    .nav { display:flex; gap:8px; margin-bottom:14px; }
+    .nav a { color: var(--accent); text-decoration: none; padding: 6px 10px; border:1px solid var(--line); border-radius:8px; }
+    .nav a.active { background: rgba(45,124,227,0.18); border-color: var(--accent); }
+    .field { display:grid; gap:4px; max-width:220px; margin-bottom:10px; }
+    .field label { font-size:12px; color:var(--muted); }
+    .field input { border-radius:8px; border:1px solid var(--line); background:#0f1822; color:var(--text); padding:8px; }
+    .btn { border:none; border-radius:10px; background:var(--accent); color:#fff; font-weight:700; padding:8px 14px; cursor:pointer; }
+    .chart-img { width:100%; border:1px solid var(--line); border-radius:10px; display:block; margin-top:10px; }
+    .stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap:8px; margin-top:10px; }
+    .stat { border:1px solid var(--line); border-radius:8px; padding:8px; background:rgba(255,255,255,0.02); }
+    .stat.active { border-color: var(--accent); background: rgba(45,124,227,0.12); }
+    .stat.faded { opacity:0.4; }
+    .k { color:var(--muted); font-size:11px; }
+    .v { font-size:16px; font-weight:700; margin-top:3px; }
+    .err { color:var(--red); }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <nav class="nav">
+    <a href="/">Inicio</a>
+    <a href="/parm">Parametros</a>
+    <a class="active" href="/chart">Grafico</a>
+  </nav>
+  <h1>📈 Grafico M5 com Canal e Projecoes</h1>
+  <form action="/chart" method="get">
+    <div class="field">
+      <label>Data (YYYY-MM-DD)</label>
+      <input type="date" name="day" value="{{ day }}">
+    </div>
+    <button class="btn" type="submit">Gerar</button>
+    <a class="btn" href="/chart" style="background:transparent;border:1px solid var(--line);">Hoje</a>
+  </form>
+
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+  {% if image_data %}
+  <img class="chart-img" src="{{ image_data }}" alt="Chart">
+  <div class="stats">
+    <div class="stat"><div class="k">Canal Max</div><div class="v">{{ "%.2f"|format(summary.channel_high) }}</div></div>
+    <div class="stat"><div class="k">Canal Min</div><div class="v">{{ "%.2f"|format(summary.channel_low) }}</div></div>
+    <div class="stat"><div class="k">Largura</div><div class="v">{{ "%.2f"|format(summary.channel_width) }}</div></div>
+    <div class="stat"><div class="k">Dist Proj</div><div class="v">{{ "%.2f"|format(summary.projection_distance) }}</div></div>
+    {% for n in range(1, 4) %}
+    <div class="stat {{ 'active' if summary['proj_up_'~n~'_visible'] else 'faded' }}">
+      <div class="k">Proj +{{ n }}</div><div class="v">{{ "%.2f"|format(summary['proj_up_'~n]) }}</div>
+    </div>
+    {% endfor %}
+    {% for n in range(1, 4) %}
+    <div class="stat {{ 'active' if summary['proj_down_'~n~'_visible'] else 'faded' }}">
+      <div class="k">Proj -{{ n }}</div><div class="v">{{ "%.2f"|format(summary['proj_down_'~n]) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+</body>
+</html>

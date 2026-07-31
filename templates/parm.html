@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Parametros — Trade Assistant</title>
+  <style>
+    :root {
+      --bg: #0b1118; --panel: #14202b; --line: rgba(148,163,184,0.2);
+      --text: #e6eef6; --muted: #90a4b8; --accent: #2d7ce3;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: Segoe UI, Arial, sans-serif; }
+    .shell { max-width: 800px; margin: 0 auto; padding: 18px; }
+    h1 { font-size: 20px; margin-bottom: 10px; }
+    .card { border:1px solid var(--line); border-radius:14px; background:var(--panel); padding:14px; margin-bottom:12px; }
+    .nav { display:flex; gap:8px; margin-bottom:14px; }
+    .nav a { color: var(--accent); text-decoration: none; padding: 6px 10px; border:1px solid var(--line); border-radius:8px; }
+    .nav a.active { background: rgba(45,124,227,0.18); border-color: var(--accent); }
+    .field { display:grid; gap:4px; margin-bottom:10px; }
+    .field label { font-size:12px; color:var(--muted); }
+    .field input, .field select { border-radius:8px; border:1px solid var(--line); background:#0f1822; color:var(--text); padding:8px; }
+    .btn { border:none; border-radius:10px; background:var(--accent); color:#fff; font-weight:700; padding:10px 16px; cursor:pointer; }
+    .msg { margin-top:8px; padding:8px; border-radius:8px; }
+    .msg.ok { background: rgba(49,180,108,0.15); color: #31b46c; }
+    .msg.err { background: rgba(239,107,90,0.15); color: #ef6b5a; }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <nav class="nav">
+    <a href="/">Inicio</a>
+    <a class="active" href="/parm">Parametros</a>
+    <a href="/chart">Grafico</a>
+  </nav>
+  <h1>⚙️ Parametros</h1>
+  {% if message %}
+  <div class="msg {{ 'ok' if 'sucesso' in message.lower() or 'atualizado' in message.lower() else 'err' }}">{{ message }}</div>
+  {% endif %}
+  <form method="post">
+    {% for key, val in params.items() %}
+    <div class="field">
+      <label>{{ key }}</label>
+      <input name="{{ key }}" value="{{ val }}">
+    </div>
+    {% endfor %}
+    <button class="btn" type="submit">Salvar</button>
+  </form>
+</div>
+</body>
+</html>

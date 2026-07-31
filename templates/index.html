@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trade Assistant</title>
+  <style>
+    :root {
+      --bg: #0b1118; --panel: #14202b; --line: rgba(148,163,184,0.2);
+      --text: #e6eef6; --muted: #90a4b8; --accent: #2d7ce3;
+      --green: #31b46c; --red: #ef6b5a; --yellow: #f0a040;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: Segoe UI, Arial, sans-serif; }
+    .shell { max-width: 900px; margin: 0 auto; padding: 18px; }
+    h1 { font-size: 20px; margin-bottom: 6px; }
+    h3 { margin-bottom: 8px; }
+    .card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: 14px; margin-bottom: 12px; }
+    .nav { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+    .nav a { color: var(--accent); text-decoration: none; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; }
+    .nav a.active { background: rgba(45,124,227,0.18); border-color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+    .stat { border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: rgba(255,255,255,0.02); }
+    .stat .label { color: var(--muted); font-size: 11px; }
+    .stat .value { font-size: 18px; font-weight: 700; margin-top: 4px; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .warn { color: var(--yellow); }
+    .flags { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+    .flag { display: flex; flex-direction: column; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); gap: 2px; }
+    .flag.blocked { border-color: var(--red); background: rgba(239,107,90,0.1); }
+    .flag.clear { border-color: var(--green); background: rgba(49,180,108,0.08); }
+    .flag-row { display: flex; justify-content: space-between; align-items: center; }
+    .flag-name { font-size: 13px; font-weight: 600; }
+    .flag-status { font-weight: 700; font-size: 12px; }
+    .flag-detail { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .trade-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+    .trade-row:last-child { border-bottom: none; }
+    #server-time { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <nav class="nav">
+    <a class="active" href="/">Inicio</a>
+    <a href="/parm">Parametros</a>
+    <a href="/chart">Grafico</a>
+  </nav>
+  <h1>📊 Trade Assistant</h1>
+  <div id="server-time">Carregando...</div>
+
+  <div class="card">
+    <h3>Resumo do Dia</h3>
+    <div class="grid" id="day-stats"></div>
+  </div>
+
+  <div class="card">
+    <h3>🚫 Status dos Bloqueios</h3>
+    <div class="flags" id="block-flags"></div>
+  </div>
+
+  <div class="card">
+    <h3>📈 Trade Ativo</h3>
+    <div id="trade-info">Nenhuma posicao aberta</div>
+    <div id="trade-chart"></div>
+  </div>
+
+  <div class="card">
+    <h3>📋 Trades Fechados Hoje</h3>
+    <div id="closed-trades">Carregando...</div>
+  </div>
+</div>
+
+<script>
+async function refresh() {
+  try {
+    const r = await fetch('/api/state');
+    const d = await r.json();
+    document.getElementById('server-time').textContent =
+      'Servidor: ' + d.server_time + ' | Dia: ' + d.day_key + ' | MT5: ' + (d.mt5_connected ? '✅' : '❌');
+
+    // Day stats
+    document.getElementById('day-stats').innerHTML = [
+      {l:'Lucro Diario', v: (d.daily_profit||0).toFixed(2), c: (d.daily_profit||0)>=0?'positive':'negative'},
+      {l:'Pico do Dia', v: (d.max_daily_profit||0).toFixed(2)},
+      {l:'Drawdown', v: (d.current_drawdown||0).toFixed(2)},
+      {l:'Operacoes', v: (d.operations_count||0)},
+    ].map(s => `<div class="stat"><div class="label">${s.l}</div><div class="value ${s.c||''}">${s.v}</div></div>`).join('');
+
+    // Block details from API
+    const details = d.block_details || [];
+    document.getElementById('block-flags').innerHTML = details.map(b => {
+      const cl = b.blocked ? 'blocked' : 'clear';
+      const status = b.blocked ? '⚠️ BLOQUEADO' : '✅ Liberado';
+      const color = b.blocked ? 'var(--red)' : 'var(--green)';
+      const cur = typeof b.current === 'number' ? b.current.toFixed(2) : b.current;
+      return `<div class="flag ${cl}">
+        <div class="flag-row">
+          <span class="flag-name">${b.name}</span>
+          <span class="flag-status" style="color:${color}">${status}</span>
+        </div>
+        <div class="flag-detail">Atual: ${cur}${b.unit} &nbsp;|&nbsp; Limite: ${b.limit}${b.unit}</div>
+      </div>`;
+    }).join('');
+
+    // Active trade
+    const t = d.open_trade;
+    document.getElementById('trade-info').innerHTML = t
+      ? `<div class="trade-row">
+        <span><b>${t.direction.toUpperCase()}</b> ${t.symbol} #${t.ticket}</span>
+        <span>Entry: ${t.entry_price} | Now: ${t.current_price}</span>
+        <span>SL: ${t.sl} | TP: ${t.tp}</span>
+        <span class="${t.profit>=0?'positive':'negative'}">PnL: ${t.profit.toFixed(2)}</span>
+        <span style="color:var(--muted)">Lock: ${t.lock_entry_achieved ? '✅' : '❌'}</span>
+      </div>`
+      : 'Nenhuma posicao aberta';
+
+    // Trade history chart — styled like profit probe
+    const hist = d.trade_history || [];
+    const chartDiv = document.getElementById('trade-chart');
+    if (hist.length > 1 && t) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 520; canvas.height = 150;
+      canvas.style.width = '100%'; canvas.style.height = '160px';
+      canvas.style.border = '1px solid var(--line)';
+      canvas.style.borderRadius = '8px';
+      canvas.style.marginTop = '8px';
+      canvas.style.backgroundColor = '#0b1118';
+      const ctx = canvas.getContext('2d');
+      const W = 520, H = 150;
+      const pad = { top: 15, right: 15, bottom: 20, left: 55 };
+      const pw = W - pad.left - pad.right;
+      const ph = H - pad.top - pad.bottom;
+      const profits = hist.map(h => h.profit);
+      const min = Math.min(0, ...profits);
+      const max = Math.max(0, ...profits);
+      const range = max - min || 1;
+
+      function toX(i) { return pad.left + (i / (hist.length - 1)) * pw; }
+      function toY(v) { return pad.top + ph - ((v - min) / range) * ph; }
+      const zeroY = toY(0);
+
+      // Green fill (profit > 0)
+      ctx.fillStyle = 'rgba(49,180,108,0.25)';
+      ctx.beginPath();
+      ctx.moveTo(pad.left, zeroY);
+      for (let i = 0; i < hist.length; i++) {
+        const y = toY(hist[i].profit);
+        ctx.lineTo(toX(i), Math.min(y, zeroY));
+      }
+      ctx.lineTo(toX(hist.length - 1), zeroY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Red fill (profit < 0)
+      ctx.fillStyle = 'rgba(239,107,90,0.25)';
+      ctx.beginPath();
+      ctx.moveTo(pad.left, zeroY);
+      for (let i = 0; i < hist.length; i++) {
+        const y = toY(hist[i].profit);
+        ctx.lineTo(toX(i), Math.max(y, zeroY));
+      }
+      ctx.lineTo(toX(hist.length - 1), zeroY);
+      ctx.closePath();
+      ctx.fill();
+
+      // Line
+      ctx.strokeStyle = '#2d7ce3';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      hist.forEach((h, i) => {
+        const x = toX(i), y = toY(h.profit);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // Zero line
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 5]);
+      ctx.beginPath(); ctx.moveTo(pad.left, zeroY); ctx.lineTo(pad.left + pw, zeroY); ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Labels
+      ctx.fillStyle = '#90a4b8'; ctx.font = '10px Segoe UI';
+      ctx.textAlign = 'right';
+      ctx.fillText(max.toFixed(1), pad.left - 5, pad.top + 11);
+      ctx.fillText('0', pad.left - 5, zeroY + 4);
+      ctx.fillText(min.toFixed(1), pad.left - 5, H - 5);
+      ctx.textAlign = 'center';
+      ctx.fillText('PnL', pad.left - 28, H / 2);
+
+      chartDiv.innerHTML = '';
+      chartDiv.appendChild(canvas);
+    } else {
+      chartDiv.innerHTML = '';
+    }
+
+    // Closed trades
+    try {
+      const dr = await fetch('/debug');
+      const dd = await dr.json();
+      const closed = dd.closed_trades || [];
+      document.getElementById('closed-trades').innerHTML = closed.length
+        ? closed.map(ct => `<div class="trade-row">
+          <span>#${ct.ticket}</span>
+          <span>${ct.time}</span>
+          <span class="${ct.profit>=0?'positive':'negative'}">${ct.profit.toFixed(2)}</span>
+        </div>`).join('')
+        : 'Nenhum trade fechado hoje';
+    } catch(e) {
+      document.getElementById('closed-trades').textContent = 'Erro ao carregar';
+    }
+
+  } catch(e) {
+    document.getElementById('server-time').textContent = 'Erro ao conectar';
+  }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>
