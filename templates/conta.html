@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conta — GK DEV TRADING</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon.png">
+  <style>
+    :root{
+      --bg:#050505;--bg-card:#0d0d12;--gold:#D4AF37;--gold-bright:#FFD700;
+      --green:#00FF41;--red:#ff4444;--muted:#666;--text:#e0e0e0;
+      --border:rgba(212,175,55,.15);--border-hover:rgba(212,175,55,.3);
+      --font-ui:'Inter',-apple-system,sans-serif;--font-mono:'JetBrains Mono','Fira Code',monospace;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background-color:var(--bg);color:var(--text);font-family:var(--font-ui);min-height:100vh}
+    .app-wrapper{max-width:1400px;margin:0 auto;padding:16px 24px;display:flex;flex-direction:column;gap:18px}
+    .card{background:rgba(13,13,18,.92);border:1px solid var(--border);border-radius:8px;padding:20px}
+    .nav-buttons{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+    .nav-btn{
+      padding:8px 18px;border-radius:6px;font-weight:600;font-size:14px;
+      cursor:pointer;border:1px solid transparent;background:transparent;
+      text-decoration:none;color:#666666;display:inline-flex;align-items:center;gap:8px;
+    }
+    .nav-btn:hover{color:#999999;background:rgba(212,175,55,.04)}
+    .nav-btn.active{color:#D4AF37;background:rgba(212,175,55,.08);border:1px solid rgba(212,175,55,.2)}
+    .title{font-size:20px;font-weight:700;color:#D4AF37;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px}
+    .sub{color:#666;font-size:12px;font-family:var(--font-mono)}
+    .field{display:inline-flex;flex-direction:column;margin-right:12px}
+    .field label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+    .field select, .field input{
+      border-radius:6px;border:1px solid var(--border);background:rgba(5,5,5,.6);
+      color:var(--text);padding:8px;font-family:var(--font-mono);
+    }
+    .btn{
+      border:none;border-radius:6px;background:linear-gradient(135deg,var(--gold),var(--gold-bright));
+      color:var(--bg);font-weight:700;padding:9px 18px;cursor:pointer;
+      box-shadow:0 0 16px rgba(212,175,55,.25);font-family:var(--font-ui);
+    }
+    .chart-img{width:100%;border:1px solid var(--border);border-radius:8px;display:block;margin-top:10px}
+    table{width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:12px;margin-top:8px}
+    th{color:var(--gold);text-transform:uppercase;font-size:10px;letter-spacing:.05em;
+       border-bottom:1px solid var(--border);padding:8px 6px;text-align:left;position:sticky;top:0;background:#0d0d12}
+    td{padding:7px 6px;border-bottom:1px solid rgba(212,175,55,.06);cursor:pointer}
+    tr:hover td{background:rgba(212,175,55,.05)}
+    .pos{color:var(--green)} .neg{color:var(--red)}
+    .err{color:var(--red);font-family:var(--font-mono);margin-top:8px}
+    /* modal */
+    .modal{
+      display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:50;
+      align-items:center;justify-content:center;padding:24px;
+    }
+    .modal.open{display:flex}
+    .modal-box{
+      background:#0d0d12;border:1px solid var(--border-hover);border-radius:10px;
+      max-width:1100px;width:100%;max-height:92vh;overflow:auto;padding:16px;position:relative;
+    }
+    .modal-close{
+      position:absolute;top:10px;right:14px;background:none;border:none;color:var(--gold);
+      font-size:22px;cursor:pointer;
+    }
+    .modal-box img{width:100%;border-radius:8px}
+  </style>
+</head>
+<body>
+<div class="app-wrapper">
+  <div class="nav-buttons">
+    <a class="nav-btn" href="/">Inicio</a>
+    <a class="nav-btn" href="/parm">Parametros</a>
+    <a class="nav-btn" href="/chart">Grafico</a>
+    <a class="nav-btn active" href="/conta">Conta</a>
+  </div>
+
+  <div class="card">
+    <div class="title">📊 Extrato da Conta</div>
+    <div class="sub">Registros coletados pelo app (ledger proprio) — sem consultar o MT5. Challenge iniciado em {{ challenge_start }}.</div>
+    <form action="/conta" method="get" style="margin-top:12px">
+      <div class="field">
+        <label>Conta</label>
+        <select name="account">
+          {% for a in accounts %}
+          <option value="{{ a }}" {{ 'selected' if a == selected }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>Janela rapida</label>
+        <select name="last">
+          <option value="" {{ 'selected' if not last }}>Todos</option>
+          {% for n in (10, 30, 50, 100) %}
+          <option value="{{ n }}" {{ 'selected' if last == n|string }}>Ultimos {{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label>De (data)</label>
+        <input type="date" name="start" value="{{ start }}">
+      </div>
+      <div class="field">
+        <label>Ate (data)</label>
+        <input type="date" name="end" value="{{ end }}">
+      </div>
+      <button class="btn" type="submit">Aplicar</button>
+    </form>
+
+    {% if not trades %}
+    <p class="err">Nenhum trade registrado no ledger ainda (o backfill roda na primeira visita / primeiro sync do app).</p>
+    {% endif %}
+
+    {% if image_data %}
+    <img class="chart-img" src="{{ image_data }}" alt="Evolucao do saldo">
+    {% endif %}
+  </div>
+
+  {% if trades %}
+  <div class="card">
+    <div class="title" style="font-size:16px">Trades — conta {{ selected }} ({{ trades|length }}){% if filter_label %} | {{ filter_label }}{% endif %}</div>
+    <div style="overflow:auto;max-height:60vh">
+    <table>
+      <thead><tr>
+        <th>Ticket</th><th>Conta</th><th>Dir</th><th>Vol</th>
+        <th>Abertura</th><th>Fechamento</th><th>Entrada</th><th>Saida</th>
+        <th>SL</th><th>TP</th><th>Lucro</th><th>Δ Preco</th>
+      </tr></thead>
+      <tbody>
+      {% for t in trades %}
+      <tr data-ticket="{{ t.ticket }}">
+        <td>#{{ t.ticket }}</td>
+        <td>{{ t.account }}</td>
+        <td>{{ t.direction }}</td>
+        <td>{{ "%.2f"|format(t.volume or 0) }}</td>
+        <td>{{ t.open_time }}</td>
+        <td>{{ t.close_time }}</td>
+        <td>{{ "%.2f"|format(t.entry_price or 0) }}</td>
+        <td>{{ "%.2f"|format(t.exit_price or 0) }}</td>
+        <td>{{ "%.2f"|format(t.sl or 0) }}</td>
+        <td>{{ "%.2f"|format(t.tp or 0) }}</td>
+        <td class="{{ 'pos' if (t.profit or 0) >= 0 else 'neg' }}">{{ "%.2f"|format(t.profit or 0) }}</td>
+        <td class="{{ 'pos' if (t.delta_price or 0) >= 0 else 'neg' }}">{{ "%.2f"|format(t.delta_price or 0) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="sub" style="margin-top:8px">Clique em um trade para ver o grafico da operacao.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="modal" id="modal">
+  <div class="modal-box">
+    <button class="modal-close" id="modal-close">×</button>
+    <div id="modal-content">Carregando...</div>
+  </div>
+</div>
+
+<script>
+(function() {
+  var modal = document.getElementById('modal');
+  var content = document.getElementById('modal-content');
+  function close() { modal.classList.remove('open'); content.innerHTML = 'Carregando...'; }
+  document.getElementById('modal-close').addEventListener('click', close);
+  modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+  document.querySelectorAll('tr[data-ticket]').forEach(function(row) {
+    row.addEventListener('click', function() {
+      var ticket = row.getAttribute('data-ticket');
+      content.innerHTML = 'Carregando...';
+      modal.classList.add('open');
+      fetch('/conta/trade/' + ticket).then(function(r) {
+        return r.json().then(function(d) { return {ok: r.ok, d: d}; });
+      }).then(function(res) {
+        if (!res.ok) { content.innerHTML = '<p class="err">' + (res.d.error || 'erro') + '</p>'; return; }
+        var t = res.d.trade;
+        content.innerHTML =
+          '<p class="sub" style="margin-bottom:8px">' +
+          '#' + t.ticket + ' | ' + (t.direction || '') + ' | Entrada ' + (t.entry_price ?? '-') +
+          ' | Saida ' + (t.exit_price ?? '-') + ' | SL ' + (t.sl ?? '-') + ' | TP ' + (t.tp ?? '-') +
+          ' | Lucro ' + (t.profit ?? '-') + ' | ' + (t.open_time || '') + ' → ' + (t.close_time || '') +
+          '</p><img src="' + res.d.image + '" alt="trade">';
+      }).catch(function() {
+        content.innerHTML = '<p class="err">Falha ao carregar o grafico</p>';
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

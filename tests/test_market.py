@@ -73,3 +73,46 @@ class TestFormatFriendly:
         assert "Qui" in result   # 30 Jul 2026 is a Thursday
         assert "30 Jul" in result
         assert "14:00" in result
+
+
+class TestNextMidnight:
+    def test_next_midnight_midday(self):
+        server = datetime(2026, 7, 30, 14, 30, 0)
+        result = MarketAnalyzer.next_midnight(server)
+        assert result == datetime(2026, 7, 31, 0, 0, 0)
+
+    def test_next_midnight_late_night(self):
+        server = datetime(2026, 7, 30, 23, 59, 59)
+        result = MarketAnalyzer.next_midnight(server)
+        assert result == datetime(2026, 7, 31, 0, 0, 0)
+
+    def test_next_midnight_exactly_midnight(self):
+        """At exactly midnight, next midnight is 24h away (next calendar day)."""
+        server = datetime(2026, 7, 31, 0, 0, 0)
+        result = MarketAnalyzer.next_midnight(server)
+        assert result == datetime(2026, 8, 1, 0, 0, 0)
+
+    def test_countdown_hhmm(self):
+        server = datetime(2026, 7, 30, 22, 30, 0)
+        result = MarketAnalyzer.countdown_hhmm(server)
+        assert result == "01:30"  # 1h30min until midnight
+
+    def test_countdown_hhmm_near_midnight(self):
+        server = datetime(2026, 7, 30, 23, 59, 30)
+        result = MarketAnalyzer.countdown_hhmm(server)
+        assert result == "00:00"  # rounded down
+
+    def test_countdown_hhmm_at_midnight(self):
+        server = datetime(2026, 7, 31, 0, 0, 0)
+        result = MarketAnalyzer.countdown_hhmm(server)
+        assert result == "00:00"
+
+    def test_block_release_is_midnight(self):
+        """Simulate: if blocked at 14:30, release is at midnight same day."""
+        from app.core.session import TradingSession
+        s = TradingSession(day_key="2026-07-30", flag_block_by_profit=True)
+        # Day change check at midnight next day
+        assert s.check_day_change(datetime(2026, 7, 31, 0, 0, 1))
+        new_s = s.for_new_day(datetime(2026, 7, 31, 0, 0, 1))
+        assert not new_s.flag_block_by_profit
+        assert new_s.day_key == "2026-07-31"

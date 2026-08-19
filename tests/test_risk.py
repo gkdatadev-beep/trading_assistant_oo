@@ -117,6 +117,44 @@ class TestDailyEvaluation:
         assert result.max_daily_profit == 500.0
         assert result.current_drawdown == 400.0  # 500 - 100
 
+    def test_drawdown_latched_never_decreases(self):
+        """Drawdown must be monotonic: once 400, profit recovery to 450
+        should NOT reduce drawdown below 400."""
+        rm = RiskManager(RiskLimits(limite_perda_diario=-350))
+        # Simulate: we already had a 400 drawdown from previous tick
+        session = TradingSession(
+            day_key="2026-07-30",
+            max_daily_profit=500.0,
+            current_drawdown=400.0,   # previously latched
+        )
+        # Profit recovers from 100 → 450
+        result = rm.evaluate(
+            session, daily_profit=450.0, operations_count=0,
+            is_outside_window=False, overtrading_active=False,
+            overtrading_triggered=False,
+        )
+        assert result.max_daily_profit == 500.0
+        # Instant = 500-450=50, but latched = max(400, 50) = 400
+        assert result.current_drawdown == 400.0
+
+    def test_drawdown_increases_when_worse(self):
+        """Drawdown increases when profit drops further from peak."""
+        rm = RiskManager(RiskLimits(limite_perda_diario=-350))
+        session = TradingSession(
+            day_key="2026-07-30",
+            max_daily_profit=500.0,
+            current_drawdown=400.0,
+        )
+        # Profit drops to -100
+        result = rm.evaluate(
+            session, daily_profit=-100.0, operations_count=0,
+            is_outside_window=False, overtrading_active=False,
+            overtrading_triggered=False,
+        )
+        assert result.max_daily_profit == 500.0
+        # Instant = 500-(-100) = 600, latched = max(400, 600) = 600
+        assert result.current_drawdown == 600.0
+
 
 class TestApplyToSession:
     def test_flags_applied_to_new_session(self):

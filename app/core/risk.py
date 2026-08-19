@@ -45,6 +45,11 @@ class RiskManager:
     def __init__(self, limits: Optional[RiskLimits] = None):
         self._limits = limits or RiskLimits()
 
+    @property
+    def limits(self) -> RiskLimits:
+        """Public read-only access to current risk limits."""
+        return self._limits
+
     # ── lock-entry ──────────────────────────────────────────
 
     def has_lock_entry(self, trade: Trade, atr: float) -> bool:
@@ -87,9 +92,10 @@ class RiskManager:
             session.flag_block_by_operations or (operations_count >= L.limite_operacoes)
         )
 
-        # Drawdown from peak
+        # Drawdown from peak — LATCHED: never decreases intraday
         max_daily_profit = max(session.max_daily_profit, daily_profit)
-        current_drawdown = round(max(0.0, max_daily_profit - daily_profit), 2)
+        instant_dd = round(max(0.0, max_daily_profit - daily_profit), 2)
+        current_drawdown = max(session.current_drawdown, instant_dd)
         drawdown_limit = abs(L.limite_perda_diario)
         block_by_loss = (
             session.flag_block_by_loss or

@@ -35,6 +35,8 @@ DEFAULTS: dict[str, Any] = {
     "LOCK_ENTRY": 0.5,
     "TRAILING_STOP_BUFFER": 0.5,
     "M5_RANGE_ATR_STOP_MULTIPLIER": 1.0,
+    "MAX_PROFIT_PRICE": 10.0,
+    "MAX_LOSS_PRICE": 5.0,
     "LIMITE_LUCRO_DIARIO": float(DISCIPLINE["LIMITE_LUCRO_DIARIO"]),
     "LIMITE_PERDA_DIARIO": float(DISCIPLINE["LIMITE_PERDA_DIARIO"]),
     "LIMITE_LUCRO_OP": float(DISCIPLINE["LIMITE_LUCRO_OP"]),
@@ -45,7 +47,13 @@ DEFAULTS: dict[str, Any] = {
     "TELEGRAM_ENABLED": "0",
     "TELEGRAM_BOT_TOKEN": "",
     "TELEGRAM_CHAT_ID": "",
+    "MT5_SERVER": "",
+    "MT5_LOGIN": "",
+    "MT5_PASSWORD": "",
 }
+
+# Keys that must never be echoed/logged in plain text
+SECRET_KEYS = {"MT5_PASSWORD", "TELEGRAM_BOT_TOKEN"}
 
 
 class RuntimeConfig:

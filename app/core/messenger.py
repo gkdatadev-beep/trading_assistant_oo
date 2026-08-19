@@ -7,10 +7,13 @@ import time
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from app.core.market import MarketAnalyzer
+
 logger = logging.getLogger(__name__)
 
 # Type alias for the data provider callback
 DataProvider = Callable[[], dict]
+TimeProvider = Callable[[], datetime]
 
 
 class Messenger:
@@ -32,12 +35,17 @@ class Messenger:
         self._probe_lock = threading.Lock()
         self._probe_last_emission: Optional[str] = None
         self._data_provider: Optional[DataProvider] = None
+        self._time_provider: Optional[TimeProvider] = None
 
     # ── lifecycle ───────────────────────────────────────────
 
     def set_data_provider(self, provider: DataProvider) -> None:
         """Callback that returns live trading data for probe messages."""
         self._data_provider = provider
+
+    def set_time_provider(self, provider: TimeProvider) -> None:
+        """Callback that returns broker local time for scheduling."""
+        self._time_provider = provider
 
     def start_probes(self) -> None:
         """Start background profit probe thread."""
@@ -59,6 +67,8 @@ class Messenger:
 
     def send(self, text: str) -> bool:
         if not self._enabled or not self._token or not self._chat_id:
+            logger.debug("Telegram send skipped: enabled=%s token=%s chat=%s",
+                         self._enabled, bool(self._token), bool(self._chat_id))
             return False
         try:
             import urllib.parse
@@ -74,42 +84,76 @@ class Messenger:
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 body = json.loads(resp.read().decode())
-                return bool(body.get("ok"))
-        except Exception:
+                ok = bool(body.get("ok"))
+                logger.info("Telegram send: ok=%s", ok)
+                return ok
+        except Exception as e:
+            logger.warning("Telegram send failed: %s", e)
             return False
 
     # ── notifications ───────────────────────────────────────
 
-    def notify_blocks(self, blocks: list[str]) -> None:
+    def notify_blocks(self, blocks: list[str], release_countdown: str = "") -> None:
         if not blocks:
             return
         msg = "🛑 TRADING BLOQUEADO — bloqueios ativos:\n"
         msg += "\n".join(f"  • {b}" for b in blocks)
+        if release_countdown:
+            msg += f"\n\n⏰ Libera em {release_countdown} (meia-noite do servidor)"
         self.send(msg)
 
     def notify_startup(self, config: dict) -> None:
         lines = ["✅ Trade Assistant iniciado"]
-        lines.append(f"S: {config.get('SYMBOL', '?')} | TF: {config.get('TIMEFRAME', '?')}")
-        lines.append(f"Lote: {config.get('LOT_SIZE', '?')} | SLx{config.get('SL_MULTIPLIER', '?')} | TPx{config.get('TP_MULTIPLIER', '?')}")
+        lines.append(
+            f"S: {config.get('SYMBOL', '?')} | "
+            f"TF: {config.get('TIMEFRAME', '?')}"
+        )
+        lines.append(
+            f"Lote: {config.get('LOT_SIZE', '?')} | "
+            f"SLx{config.get('SL_MULTIPLIER', '?')} | "
+            f"TPx{config.get('TP_MULTIPLIER', '?')}"
+        )
         self.send("\n".join(lines))
 
     # ── profit probe loop ───────────────────────────────────
 
     def _probe_loop(self) -> None:
-        """Check every 60s — emit on 5-min or 15-min boundary."""
+        """Check every 60s — emit on 5-min or 15-min boundary.
+
+        Includes self-healing: if data provider fails repeatedly,
+        logs errors at WARNING level (visible in production).
+        """
         logger.info("Profit probe loop started")
+        consecutive_failures = 0
         while not self._probe_stop.is_set():
             try:
+                # Use broker local time for probe scheduling when available
                 now = datetime.now(timezone.utc)
-                has_positions = False
+                if self._time_provider:
+                    try:
+                        now = self._time_provider()
+                    except Exception:
+                        logger.warning("Probe time provider failed — using UTC fallback")
 
-                # Try to detect positions via data provider
+                has_positions = False
                 if self._data_provider:
                     try:
                         data = self._data_provider()
                         has_positions = data.get("has_position", False)
+                        consecutive_failures = 0
                     except Exception:
-                        pass
+                        consecutive_failures += 1
+                        if consecutive_failures <= 3 or consecutive_failures % 10 == 0:
+                            logger.warning(
+                                "Probe data provider failed (%d consecutive)",
+                                consecutive_failures,
+                            )
+                        if consecutive_failures > 30:
+                            logger.error(
+                                "Probe data provider FAILED %d times — "
+                                "profit probe may be offline",
+                                consecutive_failures,
+                            )
 
                 interval = 5 if has_positions else 15
                 on_boundary = now.minute % interval == 0
@@ -119,6 +163,7 @@ class Messenger:
                     already = (self._probe_last_emission == bucket)
 
                 if on_boundary and not already:
+                    logger.info("Probe: emitting at %s (interval=%d)", bucket, interval)
                     self._emit_probe_snapshot(now)
                     with self._probe_lock:
                         self._probe_last_emission = bucket
@@ -129,11 +174,12 @@ class Messenger:
                         return
                     time.sleep(1)
             except Exception:
-                logger.debug("Probe loop error", exc_info=True)
+                logger.warning("Probe loop error", exc_info=True)
                 time.sleep(10)
 
     def _emit_probe_snapshot(self, now: datetime) -> None:
         """Build and send one probe message with real data."""
+        logger.info("Probe snapshot triggered at %s", now.strftime("%H:%M:%S"))
         total_pnl = 0.0
         open_pnl = 0.0
         closed_pnl = 0.0
@@ -169,7 +215,26 @@ class Messenger:
                 f"💰 total={total_pnl:+.2f}  •  aberto={open_pnl:+.2f}  •  fechado={closed_pnl:+.2f}",
                 f"📐 ATR: {atr_val:.2f}",
             ]
-            self.send("\n".join(lines))
+            # Add block status
+            block_cd = MarketAnalyzer.countdown_hhmm(now)
+            if data.get("is_any_block"):
+                blocks = data.get("blocks_active", [])
+                lines.append("🛑 Trades bloqueados:")
+                for b in blocks:
+                    lines.append(f"  • {b}")
+                lines.append(f"⏰ Libera em {block_cd}")
+            else:
+                lines.append("🟢 Trades permitidos")
+            # Add uptime (computed against UTC to match frontend)
+            start = data.get("server_start_time") if self._data_provider else None
+            if start:
+                uptime = datetime.now(timezone.utc) - start
+                d = uptime.days
+                h, rem = divmod(uptime.seconds, 3600)
+                m, _ = divmod(rem, 60)
+                up_str = f"{d}d {h:02d}:{m:02d}" if d > 0 else f"{h:02d}:{m:02d}"
+                lines.append(f"⏱ Uptime: {up_str}")
+            # send handled below (shared)
 
             # Send trade chart if position is open
             if has_positions and self._data_provider:
@@ -181,8 +246,32 @@ class Messenger:
                 except Exception:
                     pass
         else:
-            lines = [f"📊 Profit Probe — {ts}", "⚠️ MT5 indisponivel"]
-
+            # MT5 offline — still send heartbeat with countdown
+            block_cd = MarketAnalyzer.countdown_hhmm(now)
+            start = data.get("server_start_time") if self._data_provider else None
+            up_str = ""
+            if start:
+                uptime = datetime.now(timezone.utc) - start
+                d = uptime.days
+                h, rem = divmod(uptime.seconds, 3600)
+                m, _ = divmod(rem, 60)
+                up_str = f"{d}d {h:02d}:{m:02d}" if d > 0 else f"{h:02d}:{m:02d}"
+            lines = [
+                f"📊 ⚠️ Profit Probe — {ts}",
+                "⚠️ MT5 indisponivel (mercado fechado?)",
+            ]
+            if data.get("is_any_block"):
+                blocks = data.get("blocks_active", [])
+                lines.append("🛑 Trades bloqueados:")
+                for b in blocks:
+                    lines.append(f"  • {b}")
+                lines.append(f"⏰ Libera em {block_cd}")
+            else:
+                lines.append("🟢 Trades permitidos")
+            lines.extend([
+                f"⏱ Uptime: {up_str}" if up_str else "⏱ Uptime: --",
+                "🟢 Sistema online — heartbeat",
+            ])
         self.send("\n".join(lines))
 
     # ── photo ──────────────────────────────────────────────
@@ -194,6 +283,8 @@ class Messenger:
         from io import BytesIO
         import os
         profits = [h.get("profit", 0) for h in history]
+        direction = (history[-1].get("direction", "") if history else "").upper()
+        dir_label = f"{direction} | " if direction else ""
         times = list(range(len(profits)))
         fig, ax = plt.subplots(figsize=(4, 2))
         pos = [p >= 0 for p in profits]
@@ -204,7 +295,7 @@ class Messenger:
             ax.fill_between(times, 0, profits, where=neg, color="#ef6b5a", alpha=0.3)
         ax.plot(times, profits, color="#2d7ce3", linewidth=1.5)
         ax.axhline(0, color="white", linewidth=0.5, alpha=0.3)
-        ax.set_title(f"Trade PnL — {ts}", fontsize=9, color="white")
+        ax.set_title(f"Trade PnL — {dir_label}{ts}", fontsize=9, color="white")
         ax.set_facecolor("#0b1118")
         fig.patch.set_facecolor("#0b1118")
         ax.tick_params(colors="#90a4b8", labelsize=7)

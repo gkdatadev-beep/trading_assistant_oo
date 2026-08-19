@@ -68,6 +68,28 @@ class MarketAnalyzer:
         return day_start, day_end
 
     @staticmethod
+    def next_midnight(server_time: datetime) -> datetime:
+        """Return the next midnight (start of next day) preserving timezone."""
+        today = datetime(
+            server_time.year, server_time.month, server_time.day,
+            tzinfo=server_time.tzinfo,
+        )
+        return today + timedelta(days=1)
+
+    @staticmethod
+    def countdown_hhmm(server_time: datetime) -> str:
+        """Return 'HH:MM' countdown until next midnight."""
+        target = MarketAnalyzer.next_midnight(server_time)
+        remaining = target - server_time
+        total_seconds = max(0, int(remaining.total_seconds()))
+        # At exactly midnight, remaining is 24h → show 00:00
+        if total_seconds >= 86400:
+            total_seconds = 0
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        return f"{hours:02d}:{minutes:02d}"
+
+    @staticmethod
     def format_friendly(server_time: datetime) -> str:
         """'Sex, 30 Jul 14:00' in Portuguese."""
         weekdays = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom"]

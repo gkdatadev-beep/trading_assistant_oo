@@ -2,72 +2,314 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <title>Grafico do Dia — Trade Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grafico do Dia — GK DEV TRADING</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    :root {
-      --bg: #0b1118; --panel: #14202b; --line: rgba(148,163,184,0.2);
-      --text: #e6eef6; --muted: #90a4b8; --accent: #2d7ce3; --red: #ef6b5a;
+    :root{
+      --bg:#050505;--bg-card:#0d0d12;--gold:#D4AF37;--gold-bright:#FFD700;
+      --green:#00FF41;--red:#ff4444;--muted:#666;--text:#e0e0e0;
+      --border:rgba(212,175,55,.15);--border-hover:rgba(212,175,55,.3);
+      --font-ui:'Inter',-apple-system,sans-serif;
+      --font-mono:'JetBrains Mono','Fira Code',monospace;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: Segoe UI, Arial, sans-serif; }
-    .shell { max-width: 1100px; margin: 0 auto; padding: 18px; }
-    h1 { font-size: 20px; margin-bottom: 10px; }
-    .card { border:1px solid var(--line); border-radius:14px; background:var(--panel); padding:14px; margin-bottom:12px; }
-    .nav { display:flex; gap:8px; margin-bottom:14px; }
-    .nav a { color: var(--accent); text-decoration: none; padding: 6px 10px; border:1px solid var(--line); border-radius:8px; }
-    .nav a.active { background: rgba(45,124,227,0.18); border-color: var(--accent); }
-    .field { display:grid; gap:4px; max-width:220px; margin-bottom:10px; }
-    .field label { font-size:12px; color:var(--muted); }
-    .field input { border-radius:8px; border:1px solid var(--line); background:#0f1822; color:var(--text); padding:8px; }
-    .btn { border:none; border-radius:10px; background:var(--accent); color:#fff; font-weight:700; padding:8px 14px; cursor:pointer; }
-    .chart-img { width:100%; border:1px solid var(--line); border-radius:10px; display:block; margin-top:10px; }
-    .stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr)); gap:8px; margin-top:10px; }
-    .stat { border:1px solid var(--line); border-radius:8px; padding:8px; background:rgba(255,255,255,0.02); }
-    .stat.active { border-color: var(--accent); background: rgba(45,124,227,0.12); }
-    .stat.faded { opacity:0.4; }
-    .k { color:var(--muted); font-size:11px; }
-    .v { font-size:16px; font-weight:700; margin-top:3px; }
-    .err { color:var(--red); }
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{font-size:14px}
+    body{background-color:var(--bg);margin:0;color:var(--text);font-family:var(--font-ui);min-height:100vh;overflow-x:hidden}
+    ::-webkit-scrollbar{width:8px}
+    ::-webkit-scrollbar-track{background:#050505}
+    ::-webkit-scrollbar-thumb{background:rgba(212,175,55,.2);border-radius:4px}
+    ::-webkit-scrollbar-thumb:hover{background:rgba(212,175,55,.4)}
+
+    .bg-grid{
+      position:fixed;inset:0;z-index:0;pointer-events:none;
+      background-image:
+        linear-gradient(rgba(212,175,55,.025) 1px,transparent 1px),
+        linear-gradient(90deg,rgba(212,175,55,.025) 1px,transparent 1px);
+      background-size:50px 50px;
+    }
+    .bg-code{
+      position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.05;
+      font-family:var(--font-mono);font-size:13px;color:#00FF41;
+      white-space:pre;line-height:2.2;padding:40px;overflow:hidden;
+      mask-image:linear-gradient(to bottom,transparent 0%,#000 20%,#000 80%,transparent 100%);
+      -webkit-mask-image:linear-gradient(to bottom,transparent 0%,#000 20%,#000 80%,transparent 100%);
+    }
+    .bg-particles{
+      position:fixed;inset:0;z-index:0;pointer-events:none;
+      width:2px;height:2px;border-radius:50%;background:transparent;
+      box-shadow:
+        150px 200px 2px rgba(212,175,55,.4),400px 500px 1px rgba(255,215,0,.3),
+        800px 100px 2px rgba(212,175,55,.3),1200px 600px 1px rgba(255,215,0,.4),
+        300px 800px 2px rgba(212,175,55,.2),900px 300px 1px rgba(212,175,55,.5),
+        600px 700px 2px rgba(255,215,0,.3),1100px 400px 1px rgba(212,175,55,.35),
+        200px 600px 1px rgba(255,215,0,.25),1000px 200px 2px rgba(212,175,55,.4);
+    }
+
+    .app-wrapper{
+      position:relative;z-index:1;max-width:1400px;margin:0 auto;
+      padding:16px 24px;display:flex;flex-direction:column;gap:20px;
+    }
+
+    .site-header{
+      display:flex;align-items:center;justify-content:space-between;
+      gap:24px;padding:10px 16px;background:rgba(5,5,5,.85);
+      backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+      border:1px solid rgba(212,175,55,.15);border-radius:8px;
+    }
+    .logo-container{position:relative;display:flex;align-items:center;flex-shrink:0}
+    .logo-container::before{
+      content:'';position:absolute;inset:-10px;border-radius:10px;
+      background:radial-gradient(ellipse at center,rgba(212,175,55,.18) 0%,transparent 70%);
+      animation:pulse-glow 3s ease-in-out infinite alternate;pointer-events:none;
+    }
+    @keyframes pulse-glow{from{opacity:.5}to{opacity:1}}
+    .logo-img{
+      height:96px;width:auto;position:relative;z-index:1;
+      filter:drop-shadow(0 0 14px rgba(212,175,55,.35));
+    }
+    .header-right{
+      flex:1;display:flex;flex-direction:column;align-items:flex-end;
+      justify-content:center;gap:10px;min-width:0;
+    }
+    .navbar{
+      display:flex;align-items:center;justify-content:flex-end;
+      gap:12px;flex-wrap:wrap;width:100%;
+    }
+    .nav-buttons{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .nav-btn{
+      padding:8px 20px;border-radius:6px;font-family:var(--font-ui);
+      font-size:14px;font-weight:600;cursor:pointer;transition:all .3s ease;
+      border:1px solid transparent;background:transparent;text-decoration:none;
+      display:inline-flex;align-items:center;gap:8px;
+    }
+    .nav-btn svg{width:14px;height:14px;flex-shrink:0}
+    .nav-btn.inactive{color:#666666}
+    .nav-btn.inactive:hover{color:#999999;background:rgba(212,175,55,.04)}
+    .nav-btn.inactive svg{stroke:#666}
+    .nav-btn.active{
+      color:#D4AF37;background:rgba(212,175,55,.08);
+      border:1px solid rgba(212,175,55,.2);box-shadow:0 0 12px rgba(212,175,55,.15);
+    }
+    .nav-btn.active svg{stroke:#D4AF37}
+    #uptime{color:var(--muted);font-size:11px;font-family:var(--font-mono);white-space:nowrap}
+
+    .title-section{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:4px 0}
+    .title-icon{color:#D4AF37;font-size:28px;filter:drop-shadow(0 0 8px rgba(212,175,55,.4));line-height:1}
+    .title-text{
+      font-family:var(--font-ui);font-size:22px;font-weight:700;color:#D4AF37;
+      letter-spacing:.08em;text-transform:uppercase;text-shadow:0 0 16px rgba(212,175,55,.3);
+    }
+
+    .card{
+      background:rgba(13,13,18,.92);border:1px solid rgba(212,175,55,.15);
+      border-radius:8px;padding:20px;position:relative;
+      box-shadow:inset 0 0 24px rgba(212,175,55,.02);
+      transition:border-color .3s ease,transform .3s ease;
+      animation:fadeInUp .4s ease;
+    }
+    .card:hover{border-color:rgba(212,175,55,.3);transform:translateY(-2px)}
+    @keyframes fadeInUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+    .field{display:grid;gap:4px;max-width:220px;margin-bottom:10px}
+    .field label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;font-weight:600}
+    .field input{
+      border-radius:6px;border:1px solid var(--border);background:rgba(5,5,5,.6);
+      color:var(--text);padding:8px;font-family:var(--font-mono);
+    }
+    .field input:focus{border-color:rgba(212,175,55,.5);outline:none}
+    .field select{
+      border-radius:6px;border:1px solid var(--border);background:rgba(5,5,5,.6);
+      color:var(--text);padding:8px;font-family:var(--font-mono);
+    }
+    .field select:focus{border-color:rgba(212,175,55,.5);outline:none}
+    .btn{
+      border:none;border-radius:6px;
+      background:linear-gradient(135deg,var(--gold),var(--gold-bright));
+      color:var(--bg);font-weight:700;padding:8px 14px;cursor:pointer;
+      box-shadow:0 0 16px rgba(212,175,55,.25);text-decoration:none;display:inline-block;
+      font-family:var(--font-ui);transition:box-shadow .3s ease;margin-right:8px;
+    }
+    .btn:hover{box-shadow:0 0 24px rgba(212,175,55,.4)}
+    .btn.ghost{
+      background:transparent;color:var(--gold);border:1px solid var(--border);
+      box-shadow:none;
+    }
+    .btn.ghost:hover{border-color:var(--border-hover);background:rgba(212,175,55,.06)}
+    .chart-img{width:100%;border:1px solid var(--border);border-radius:8px;display:block;margin-top:10px}
+    .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:10px}
+    .stat{
+      border:1px solid var(--border);border-radius:6px;padding:10px 12px;
+      background:#0d0d12;transition:border-color .3s ease;
+    }
+    .stat:hover{border-color:var(--border-hover)}
+    .stat.active{border-color:var(--gold);box-shadow:0 0 12px rgba(212,175,55,.1)}
+    .stat.faded{opacity:.4}
+    .k{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+    .v{font-size:16px;font-weight:700;margin-top:3px;font-family:var(--font-mono);color:var(--gold)}
+    .err{color:var(--red);font-family:var(--font-mono);margin-top:8px}
+
+    @media(max-width:768px){
+      .site-header{flex-direction:column;align-items:stretch;gap:14px}
+      .logo-img{height:72px}
+      .header-right,.navbar,.nav-buttons{align-items:stretch;justify-content:center}
+      .title-section{justify-content:center}
+      .title-text{font-size:18px}
+    }
+    @media(max-width:480px){.app-wrapper{padding:12px}.logo-img{height:64px}}
   </style>
 </head>
 <body>
-<div class="shell">
-  <nav class="nav">
-    <a href="/">Inicio</a>
-    <a href="/parm">Parametros</a>
-    <a class="active" href="/chart">Grafico</a>
-  </nav>
-  <h1>📈 Grafico M5 com Canal e Projecoes</h1>
-  <form action="/chart" method="get">
-    <div class="field">
-      <label>Data (YYYY-MM-DD)</label>
-      <input type="date" name="day" value="{{ day }}">
-    </div>
-    <button class="btn" type="submit">Gerar</button>
-    <a class="btn" href="/chart" style="background:transparent;border:1px solid var(--line);">Hoje</a>
-  </form>
+<div class="bg-grid"></div>
+<div class="bg-code">
+def strategy(data):
+    discipline = True
+    risk_per_trade = 0.01
+    max_drawdown = 0.05
+    consecutive_losses = 0
+    for bar in data:
+        if not discipline:
+            continue
+        signal = generate_signal(bar)
+        if signal:
+            if risk_management():
+                execute_order(signal)
+                consecutive_losses = 0
+            else:
+                discipline = False
+</div>
+<div class="bg-particles"></div>
 
-  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+<div class="app-wrapper">
+  <header class="site-header">
+    <div class="logo-container">
+      <img src="/static/logo-header.png" class="logo-img" alt="GK DEV TRADING">
+    </div>
+    <div class="header-right">
+      <nav class="navbar">
+        <div class="nav-buttons">
+          <a class="nav-btn inactive" href="/">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+            Inicio
+          </a>
+          <a class="nav-btn inactive" href="/parm">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+            Parametros
+          </a>
+          <a class="nav-btn active" href="/chart">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16"/><path d="M8 16v-5M12 16V8M16 16v-3"/></svg>
+            Grafico
+          </a>
+          <a class="nav-btn inactive" href="/conta">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+            Conta
+          </a>
+        </div>
+        <span id="uptime">⬆ 00:00:00</span>
+      </nav>
+      <div class="title-section">
+        <span class="title-icon">📈</span>
+        <span class="title-text">Grafico M5</span>
+      </div>
+    </div>
+  </header>
 
-  {% if image_data %}
-  <img class="chart-img" src="{{ image_data }}" alt="Chart">
-  <div class="stats">
-    <div class="stat"><div class="k">Canal Max</div><div class="v">{{ "%.2f"|format(summary.channel_high) }}</div></div>
-    <div class="stat"><div class="k">Canal Min</div><div class="v">{{ "%.2f"|format(summary.channel_low) }}</div></div>
-    <div class="stat"><div class="k">Largura</div><div class="v">{{ "%.2f"|format(summary.channel_width) }}</div></div>
-    <div class="stat"><div class="k">Dist Proj</div><div class="v">{{ "%.2f"|format(summary.projection_distance) }}</div></div>
-    {% for n in range(1, 4) %}
-    <div class="stat {{ 'active' if summary['proj_up_'~n~'_visible'] else 'faded' }}">
-      <div class="k">Proj +{{ n }}</div><div class="v">{{ "%.2f"|format(summary['proj_up_'~n]) }}</div>
+  <div class="card">
+    <form action="/chart" method="get">
+      <div class="field">
+        <label>Data (YYYY-MM-DD)</label>
+        <input type="date" name="day" value="{{ day }}">
+      </div>
+      <div class="field">
+        <label>Timeframe dos canais</label>
+        <select name="tf">
+          <option value="H4" {{ 'selected' if tf == 'H4' }}>4 Horas (H4)</option>
+          <option value="D1" {{ 'selected' if tf == 'D1' }}>Diario (D1)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Janela (meses)</label>
+        <select name="months">
+          {% for m in (3, 6, 9, 12) %}
+          <option value="{{ m }}" {{ 'selected' if months == m }}>{{ m }} meses</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn" type="submit">Gerar</button>
+      <a class="btn ghost" href="/chart">Hoje</a>
+    </form>
+
+    {% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+    {% if image_data %}
+    <img class="chart-img" src="{{ image_data }}" alt="Chart">
+    <div class="stats">
+      <div class="stat"><div class="k">Canal Max</div><div class="v">{{ "%.2f"|format(summary.channel_high) }}</div></div>
+      <div class="stat"><div class="k">Canal Min</div><div class="v">{{ "%.2f"|format(summary.channel_low) }}</div></div>
+      <div class="stat"><div class="k">Largura</div><div class="v">{{ "%.2f"|format(summary.channel_width) }}</div></div>
+      <div class="stat"><div class="k">Dist Proj</div><div class="v">{{ "%.2f"|format(summary.projection_distance) }}</div></div>
+      {% for n in range(1, 4) %}
+      <div class="stat {{ 'active' if summary['proj_up_'~n~'_visible'] else 'faded' }}">
+        <div class="k">Proj +{{ n }}</div><div class="v">{{ "%.2f"|format(summary['proj_up_'~n]) }}</div>
+      </div>
+      {% endfor %}
+      {% for n in range(1, 4) %}
+      <div class="stat {{ 'active' if summary['proj_down_'~n~'_visible'] else 'faded' }}">
+        <div class="k">Proj -{{ n }}</div><div class="v">{{ "%.2f"|format(summary['proj_down_'~n]) }}</div>
+      </div>
+      {% endfor %}
     </div>
-    {% endfor %}
-    {% for n in range(1, 4) %}
-    <div class="stat {{ 'active' if summary['proj_down_'~n~'_visible'] else 'faded' }}">
-      <div class="k">Proj -{{ n }}</div><div class="v">{{ "%.2f"|format(summary['proj_down_'~n]) }}</div>
+    {% endif %}
+  </div>
+
+  {% if image_data_hf %}
+  <div class="card">
+    <div class="title-section" style="justify-content:flex-start;gap:10px">
+      <span class="title-icon">🔎</span>
+      <span class="title-text" style="font-size:16px">Canais Horizontais — {{ hf_summary.tf }} ({{ hf_summary.months }} meses)</span>
     </div>
-    {% endfor %}
+    <img class="chart-img" src="{{ image_data_hf }}" alt="Channel chart">
+    <div class="stats">
+      <div class="stat active"><div class="k">Canal Principal</div><div class="v">{{ "%.2f"|format(hf_summary.primary_width) }}</div></div>
+      <div class="stat"><div class="k">Sub-canal (50%)</div><div class="v">{{ "%.2f"|format(hf_summary.secondary_width) }}</div></div>
+      <div class="stat"><div class="k">Ancora</div><div class="v">{{ "%.2f"|format(hf_summary.anchor) }}</div></div>
+      <div class="stat"><div class="k">Candles</div><div class="v">{{ hf_summary.n_candles }}</div></div>
+      {% for z in hf_summary.zones %}
+      <div class="stat {{ 'active' if loop.index == 1 }}">
+        <div class="k">Zona LQ {{ loop.index }}</div>
+        <div class="v">{{ "%.2f"|format(z.level) }} <span style="color:var(--muted);font-size:11px">freq {{ "%.0f"|format(z.weight) }}</span></div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% elif hf_error %}
+  <div class="card">
+    <p class="err">{{ hf_error }}</p>
   </div>
   {% endif %}
 </div>
+
+<script>
+(function() {
+  var start = null;
+  function tick() {
+    if (!start) return;
+    var e = Math.floor((Date.now() - start) / 1000);
+    var d = Math.floor(e / 86400), h = Math.floor((e % 86400) / 3600),
+        m = Math.floor((e % 3600) / 60), s = e % 60;
+    var el = document.getElementById('uptime');
+    if (el) el.textContent = '⬆ ' + (d > 0 ? d + 'd ' : '') +
+      String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  }
+  setInterval(tick, 1000);
+  fetch('/api/state').then(r=>r.json()).then(d=>{
+    if(d.server_start_time){start=new Date(d.server_start_time).getTime();tick()}
+  }).catch(()=>{start=Date.now();tick()});
+})();
+</script>
 </body>
 </html>
