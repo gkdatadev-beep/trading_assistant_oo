@@ -29,6 +29,28 @@ class TestTradeCreation:
             t.profit = 10.0  # frozen dataclass
 
 
+class TestTradeSignal:
+    def test_signal_stored_and_serialized(self):
+        sig = {"ok": True, "bias": "SELL", "p_tp": 0.4, "p_sl": 0.5, "n": 40}
+        t = Trade(
+            ticket=1, symbol="XAUUSD", direction="sell",
+            volume=0.1, entry_price=100.0, current_price=100.0,
+            profit=0.0, sl=0.0, tp=0.0, state=TradeState.OPEN,
+            max_profit_seen=0.0, lock_entry_achieved=False,
+            signal=sig,
+        )
+        assert t.to_dict()["signal"] == sig
+
+    def test_signal_default_none(self):
+        t = Trade(
+            ticket=1, symbol="XAUUSD", direction="buy",
+            volume=0.1, entry_price=100.0, current_price=100.0,
+            profit=0.0, sl=0.0, tp=0.0, state=TradeState.OPEN,
+            max_profit_seen=0.0, lock_entry_achieved=False,
+        )
+        assert t.to_dict()["signal"] is None
+
+
 class TestTradePrices:
     def test_with_prices_returns_new_instance(self):
         t = Trade(

@@ -16,6 +16,28 @@
 4. O MT5 em si também pode auto-logar, se o login foi salvo com a opção
    **"Keep me signed in"** marcada na tela de login.
 
+## Um único terminal = um único dispositivo na corretora
+
+- O app usa **attach-only**: ele só conecta ao `terminal64.exe` que já está
+  aberto (o que o watchdog sobe pelo atalho do Menu Iniciar). Ele **nunca
+  lança uma segunda instância escondida do MT5** — cada instância que loga na
+  conta pode ser registrada pela corretora como um "dispositivo" diferente.
+- O caminho do terminal é fixado em `MT5_PATH`
+  (`C:\Program Files\MetaTrader 5\terminal64.exe`) e o modo portátil é
+  desativado (`portable=False`), garantindo sempre o MESMO diretório de dados
+  e a mesma identidade.
+- Se o terminal não estiver aberto, o app aguarda em modo degradado e
+  reconecta sozinho quando o MT5 subir (nada de instância escondida).
+- A tarefa agendada roda **sem elevação** (`RunLevel Limited`): processo
+  elevado + terminal normal pode quebrar o anexo IPC e gerar uma segunda
+  instância do terminal.
+- O notebook `notebooks/analise_direcao_diaria.ipynb` também fixa o mesmo
+  `terminal64.exe` ao buscar dados do MT5.
+
+> Se a corretora ainda mostrar dois dispositivos antigos, peça a ela para
+> remover/zerar a lista de dispositivos do painel; a partir de agora todos os
+> logins virão do mesmo terminal.
+
 ## Rotina semanal (reboot do PC)
 
 1. Reinicie o Windows normalmente (desligamento limpo preserva o estado do MT5).
@@ -31,6 +53,18 @@
   se autenticar sozinho no boot.
 - Mantenha Servidor/Conta/Senha atualizados em `http://localhost:8000/parm`
   (seção "Conexao MT5 (auto-login)") — é o fallback do app.
+- Ao reinstalar a tarefa (`install_startup.ps1`, PowerShell **como administrador**),
+  libere a política de execução só para a sessão caso dê
+  "execução de scripts foi desabilitada":
+  ```powershell
+  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+  .\install_startup.ps1
+  ```
+- A tarefa tem DOIS triggers: AtLogOn + repetição a cada 5 min (rede de segurança
+  que sobe o watchdog se ele for encerrado; RestartCount do Agendador não se
+  aplica a trigger de logon). `MultipleInstances=IgnoreNew` evita duplicatas.
+- **Não feche a janela "Trade Assistant OO Watchdog"** — encerrar o watchdog
+  derruba a supervisão (o trigger de 5 min re-suba em minutos, mas evite).
 
 ## Cenário "modo segurança" (MT5 volta deslogado)
 

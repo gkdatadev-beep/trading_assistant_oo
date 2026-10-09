@@ -115,6 +115,44 @@ class Messenger:
         )
         self.send("\n".join(lines))
 
+    def notify_new_day(self, config: dict, base_info: str = "",
+                       day_key: str = "") -> bool:
+        """Mensagem da virada do dia: todos os parâmetros + base estatística."""
+        lines = ["🌅 Novo dia de trading" + (f": {day_key}" if day_key else "")]
+        lines.append(
+            f"S: {config.get('SYMBOL', '?')} | TF: {config.get('TIMEFRAME', '?')}"
+        )
+        lines.append(
+            f"Lote: {config.get('LOT_SIZE', '?')} | "
+            f"TPx{config.get('TP_MULTIPLIER', '?')} | "
+            f"SLx{config.get('SL_MULTIPLIER', '?')}"
+        )
+        lines.append(
+            f"TP price: {config.get('MAX_PROFIT_PRICE', '?')} | "
+            f"SL price: {config.get('MAX_LOSS_PRICE', '?')}"
+        )
+        lines.append(
+            f"Janelas: {config.get('TRADING_WINDOW_1_START', '?')}"
+            f"+{config.get('TRADING_WINDOW_1_DURATION_HOURS', '?')}h | "
+            f"{config.get('TRADING_WINDOW_2_START', '?')}"
+            f"+{config.get('TRADING_WINDOW_2_DURATION_HOURS', '?')}h"
+        )
+        lines.append(
+            f"Limites: lucro {config.get('LIMITE_LUCRO_DIARIO', '?')} | "
+            f"perda {config.get('LIMITE_PERDA_DIARIO', '?')} | "
+            f"ops {config.get('LIMITE_OPERACOES', '?')}"
+        )
+        lines.append(
+            f"Lock: {config.get('LOCK_ENTRY', '?')} ATR | "
+            f"Trail buffer: {config.get('TRAILING_STOP_BUFFER', '?')}"
+        )
+        if base_info:
+            lines.append(f"🗄️ Base estatística atualizada: {base_info}")
+        else:
+            lines.append("🗄️ Base estatística: atualização pendente")
+        lines.append("✅ Bloqueios resetados | 🟢 Pronto para o próximo dia de trading")
+        return self.send("\n".join(lines))
+
     # ── profit probe loop ───────────────────────────────────
 
     def _probe_loop(self) -> None:
@@ -215,7 +253,64 @@ class Messenger:
                 f"💰 total={total_pnl:+.2f}  •  aberto={open_pnl:+.2f}  •  fechado={closed_pnl:+.2f}",
                 f"📐 ATR: {atr_val:.2f}",
             ]
+            # ── último swing (SH ou SL — apenas o mais recente) ──
+            swings = data.get("swings") if isinstance(data, dict) else None
+            if swings:
+                n_wing = swings.get("_candles", "?")
+                lines.append("")
+                lines.append(
+                    f"🔺🔻 Fractais Bill Williams (N={n_wing}) — último swing:")
+                for tf_name in ("H1", "M15", "M5"):
+                    s = swings.get(tf_name) or {}
+                    sw = s.get("swing")
+                    sw_s = (
+                        f"{sw['kind']} {sw['price']:.2f} ({sw['time']})"
+                        if sw else "—"
+                    )
+                    lines.append(f"   {tf_name}: {sw_s}")
+            # ── sinal probabilístico (BUY/SELL + toques) ───────
+            lines.append("")
+            signal = data.get("signal") if isinstance(data, dict) else None
+            if signal:
+                if signal.get("ok"):
+                    arrow = "📉 SELL" if signal["bias"] == "SELL" else "📈 BUY"
+                    lines.append(
+                        f"🎲 Sinal {arrow} (fade {signal['direction']}, n={signal['n']}):"
+                    )
+                    # x/y em USD de preço (mesma unidade do MAX_PROFIT_PRICE).
+                    # 1 USD = 100 ticks (digits=2) → mostra também em ticks.
+                    x_usd = float(signal["x"])
+                    y_usd = float(signal["y"])
+                    lines.append(
+                        f"   P(TP +{x_usd:.0f} USD ({int(x_usd * 100)} ticks) em "
+                        f"{signal['horizon_hours']}h): {signal['p_tp']:.0%}"
+                    )
+                    lines.append(
+                        f"   P(SL −{y_usd:.0f} USD ({int(y_usd * 100)} ticks) em "
+                        f"{signal['horizon_hours']}h): {signal['p_sl']:.0%}"
+                    )
+                    if signal.get("ev_usd") is not None:
+                        sinal_ev = "🟢" if signal["ev_usd"] > 0 else "🔴"
+                        lines.append(
+                            f"   ⚖️ EV por trade (custos inclusos): {sinal_ev} "
+                            f"{signal['ev_usd']:+.1f} US$ "
+                            f"({signal.get('lot', 0.2):g} lote)"
+                        )
+                    if signal.get("p_up_1h") is not None:
+                        lines.append(
+                            f"   Próx 1h: ↑{signal['p_up_1h']:.0%} "
+                            f"↓{1 - signal['p_up_1h']:.0%}"
+                        )
+                    if signal.get("weak"):
+                        lines.append("   ⚠️ amostra pequena — sinal apenas informativo")
+                else:
+                    lines.append("🎲 Sinal: sem definição de direção ainda")
+            else:
+                # sinal indisponível (erro interno ou base vazia) —
+                # mantém a linha visível para o usuário acompanhar o status
+                lines.append("🎲 Sinal: temporariamente indisponível")
             # Add block status
+            lines.append("")
             block_cd = MarketAnalyzer.countdown_hhmm(now)
             if data.get("is_any_block"):
                 blocks = data.get("blocks_active", [])
@@ -228,6 +323,7 @@ class Messenger:
             # Add uptime (computed against UTC to match frontend)
             start = data.get("server_start_time") if self._data_provider else None
             if start:
+                lines.append("")
                 uptime = datetime.now(timezone.utc) - start
                 d = uptime.days
                 h, rem = divmod(uptime.seconds, 3600)
@@ -260,6 +356,7 @@ class Messenger:
                 f"📊 ⚠️ Profit Probe — {ts}",
                 "⚠️ MT5 indisponivel (mercado fechado?)",
             ]
+            lines.append("")
             if data.get("is_any_block"):
                 blocks = data.get("blocks_active", [])
                 lines.append("🛑 Trades bloqueados:")
@@ -268,6 +365,7 @@ class Messenger:
                 lines.append(f"⏰ Libera em {block_cd}")
             else:
                 lines.append("🟢 Trades permitidos")
+            lines.append("")
             lines.extend([
                 f"⏱ Uptime: {up_str}" if up_str else "⏱ Uptime: --",
                 "🟢 Sistema online — heartbeat",

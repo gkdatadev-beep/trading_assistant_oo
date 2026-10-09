@@ -293,6 +293,62 @@ def analyze_channels(
     }
 
 
+# ── first-hour channel (intraday projections) ──────────────────────────────
+
+def first_hour_channel_levels(
+    day_m5: pd.DataFrame,
+    projections: int = 3,
+) -> dict:
+    """Projected channel levels from the first hour of the day (12 × M5).
+
+    Same math as the /chart "Canal 1h" plot:
+      • channel      = max/min of the first 12 M5 candles of the day
+      • projection   = 2 × channel width
+      • levels       = channel high/low + `projections` levels up and down
+
+    Parameters
+    ----------
+    day_m5 : DataFrame (time-indexed, ascending) with today's M5 candles.
+    projections : number of projected levels on each side (default 3).
+
+    Returns
+    -------
+    {"channel_high", "channel_low", "channel_width", "projection_distance",
+     "levels": [{"kind","side","label","level","n"?}, ...]}  (levels ascending)
+    """
+    if len(day_m5) == 0:
+        raise ValueError("first_hour_channel_levels: empty DataFrame")
+    first = day_m5.iloc[:min(len(day_m5), 12)]
+    ch_high = float(first["high"].max())
+    ch_low = float(first["low"].min())
+    ch_width = ch_high - ch_low
+    proj_dist = ch_width * 2.0
+
+    levels: list[dict] = [
+        {"kind": "min", "side": "lower", "label": "Canal 1h - Min",
+         "level": ch_low},
+        {"kind": "max", "side": "upper", "label": "Canal 1h - Max",
+         "level": ch_high},
+    ]
+    for n in range(1, projections + 1):
+        levels.append({
+            "kind": "proj_down", "n": n, "side": "lower",
+            "label": f"Proj -{n}", "level": ch_low - proj_dist * n,
+        })
+        levels.append({
+            "kind": "proj_up", "n": n, "side": "upper",
+            "label": f"Proj +{n}", "level": ch_high + proj_dist * n,
+        })
+    levels.sort(key=lambda lv: lv["level"])
+    return {
+        "channel_high": ch_high,
+        "channel_low": ch_low,
+        "channel_width": ch_width,
+        "projection_distance": proj_dist,
+        "levels": levels,
+    }
+
+
 # ── plotting ───────────────────────────────────────────────────────────────
 
 def render_channel_chart(

@@ -7,7 +7,11 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from app.config import SECRET_KEYS
-from app.core.channel import analyze_channels, render_channel_chart
+from app.core.channel import (
+    analyze_channels,
+    first_hour_channel_levels,
+    render_channel_chart,
+)
 from app.core.ledger import CHALLENGE_START
 
 logger = logging.getLogger(__name__)
@@ -77,6 +81,27 @@ def api_state():
         state["max_profit_price"] = config.get_float("MAX_PROFIT_PRICE", 10.0) if config else 10.0
         state["max_loss_price"] = config.get_float("MAX_LOSS_PRICE", 5.0) if config else 5.0
 
+        # ── camada de sinais do canal 1h (sempre visível na tela) ──
+        state["auto_trade_enabled"] = (
+            config.get_str("AUTO_TRADE_ENABLED", "0") == "1" if config else False
+        )
+
+        # ── botão Algo Trading (AutoTrading) do terminal ──
+        state["mt5_trade_allowed"] = True
+        try:
+            ti = __import__("MetaTrader5", fromlist=["terminal_info"]).terminal_info()
+            if ti is not None:
+                state["mt5_trade_allowed"] = bool(
+                    getattr(ti, "trade_allowed", True))
+        except Exception:
+            pass
+        engine = getattr(current_app, "auto_signal_engine", None)
+        try:
+            state["auto_signal"] = engine.status() if engine is not None else {}
+        except Exception:
+            logger.warning("Auto signal status failed", exc_info=True)
+            state["auto_signal"] = {}
+
         # Countdown to block release (next midnight broker local time)
         from app.core.market import MarketAnalyzer
         bt = broker.get_server_time() if broker and broker.connected else datetime.now(timezone.utc)
@@ -98,6 +123,47 @@ def api_state():
                 closed_trades = []
         state["closed_trades"] = (closed_trades or [])[-20:]
 
+        # ── origem das operações (manual × automática) ──
+        origins = getattr(current_app, "trade_origin", {}) or {}
+        for ct in state["closed_trades"]:
+            ct.setdefault(
+                "origin", origins.get(int(ct.get("ticket") or 0), "MANUAL"))
+        ot = state.get("open_trade")
+        state["open_trade_origin"] = (
+            origins.get(int(ot["ticket"]), "MANUAL") if ot else None
+        )
+
+        # ── sinal probabilístico registrado na entrada de cada trade ──
+        signal_at_open = getattr(current_app, "signal_at_open", None) or {}
+        for ct in state["closed_trades"]:
+            if ct.get("signal"):
+                continue
+            sig = signal_at_open.get(int(ct.get("ticket") or 0))
+            if sig:
+                ct["signal"] = sig
+                ct["signal_bias"] = sig.get("bias")
+                ct["signal_p_tp"] = sig.get("p_tp")
+                ct["signal_p_sl"] = sig.get("p_sl")
+
+        # ── relatório: acerto real × probabilidade indicada ──
+        report = {"n": 0, "wins": 0, "p_tp_medio": None}
+        for ct in state["closed_trades"]:
+            sig = ct.get("signal")
+            if not sig:
+                continue
+            report["n"] += 1
+            if float(ct.get("profit", 0) or 0) >= 0:
+                report["wins"] += 1
+        if report["n"] > 0:
+            pts = [
+                float(ct["signal"]["p_tp"])
+                for ct in state["closed_trades"]
+                if ct.get("signal") and ct["signal"].get("p_tp") is not None
+            ]
+            if pts:
+                report["p_tp_medio"] = round(sum(pts) / len(pts), 4)
+        state["signal_report"] = report
+
         return jsonify(state)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -109,6 +175,26 @@ def api_days():
     persistence = getattr(current_app, "persistence", None)
     days = persistence.list_available_days() if persistence else []
     return jsonify({"days": days})
+
+
+@bp.route("/api/auto-toggle", methods=["POST"])
+def api_auto_toggle():
+    """Liga/desliga a abertura automática de operações (botão ON/OFF).
+
+    A detecção/exibição do sinal continua ativa independente desta flag.
+    """
+    config = getattr(current_app, "config_obj", None)
+    if config is None:
+        return jsonify({"enabled": False, "error": "config indisponível"}), 500
+    enabled = config.get_str("AUTO_TRADE_ENABLED", "0") == "1"
+    new_enabled = not enabled
+    config.update({"AUTO_TRADE_ENABLED": "1" if new_enabled else "0"})
+    messenger = getattr(current_app, "messenger", None)
+    if messenger:
+        messenger.send(
+            f"🤖 Auto-trade: {'🟢 LIGADO' if new_enabled else '⚪ DESLIGADO'}")
+    logger.info("Auto-trade toggled: %s", new_enabled)
+    return jsonify({"enabled": new_enabled})
 
 
 @bp.route("/api/health")
@@ -206,6 +292,9 @@ def parm():
                  "hint": "TP = entry ± TP_MULT × ATR", "example": "4"},
                 {"key": "SL_MULTIPLIER", "label": "Multiplicador SL",
                  "hint": "SL = entry ± SL_MULT × ATR", "example": "2"},
+                {"key": "SWING_CANDLES", "label": "Fractal Swing (candles)",
+                 "hint": "Janela do fractal Bill Williams: 3 ou 5 candles",
+                 "example": "5", "options": ["3", "5"]},
             ],
         },
         {
@@ -293,6 +382,66 @@ def parm():
                  "label": "Chat ID Telegram",
                  "hint": "ID do chat/grupo para notificacoes",
                  "example": ""},
+                {"key": "CHANNEL_BREAKOUT_ALERTS",
+                 "label": "Alertas de Canal (Telegram)",
+                 "hint": "1 = avisa no Telegram quando o preco romper "
+                        "os canais projetados da 1a hora",
+                 "example": "0"},
+                {"key": "CHANNEL_ALERT_COOLDOWN_MIN",
+                 "label": "Cooldown Alertas Canal (min)",
+                 "hint": "Minimo entre mensagens de rompimento "
+                        "(nova ocorrencia so apos este tempo)",
+                 "example": "5"},
+            ],
+        },
+        {
+            "title": "🎯 Sinal Auto (Canal 1h)",
+            "description": (
+                "Referência: canal da 1ª hora (12 velas M5 iniciais do dia).\n"
+                "COMPRA: o preço rompe o topo do canal (Canal 1h - Max) e, "
+                "ao passar o BUFFER acima da máxima atual do dia, dispara a "
+                "entrada. TP no primeiro canal PAR forte (Proj +2); SL no "
+                "canal -1 da mínima do dia (stop ÍMPAR seguro).\n"
+                "VENDA: espelho — rompe o fundo do canal (Canal 1h - Min) e "
+                "passa o BUFFER abaixo da mínima do dia; TP no Proj -2; SL na "
+                "máxima do dia +1 projeção.\n"
+                "Volume: risco (USD) ÷ distância do stop — o lote é calculado "
+                "pela gestão de risco. O sinal é sempre exibido na tela e "
+                "enviado ao Telegram com o gráfico do setup; o Auto-Trade "
+                "apenas controla se a operação é aberta automaticamente "
+                "(1 sinal por dia, só até a hora de corte)."
+            ),
+            "fields": [
+                {"key": "AUTO_TRADE_ENABLED",
+                 "label": "Auto-Trade Ativo",
+                 "hint": "1 = abre a operacao do sinal automaticamente; "
+                        "0 = sinal apenas informativo (tela + Telegram)",
+                 "example": "0"},
+                {"key": "SIGNAL_ENTRY_BUFFER_USD",
+                 "label": "Buffer Entrada (USD)",
+                 "hint": "Compra quando preco ≥ maxima do dia + este valor "
+                        "(venda = minima − valor)",
+                 "example": "0.5"},
+                {"key": "SIGNAL_TP_CHANNEL",
+                 "label": "Canal do TP (par forte)",
+                 "hint": "Multiplicador PAR da projecao usado como TP "
+                        "(2 = primeira resistencia forte)",
+                 "example": "2"},
+                {"key": "SIGNAL_SL_CHANNEL",
+                 "label": "Canal do SL (impar seguro)",
+                 "hint": "Multiplicador IMPAR da projecao usado como stop "
+                        "(1 = primeiro stop seguro)",
+                 "example": "1"},
+                {"key": "SIGNAL_END_HOUR",
+                 "label": "Fim do Sinal (hora servidor)",
+                 "hint": "Apos esta hora o motor nao arma nem dispara "
+                        "novos sinais (so inicio do dia)",
+                 "example": "12"},
+                {"key": "AUTO_RISK_USD",
+                 "label": "Risco por Operacao Auto (USD)",
+                 "hint": "Valor monetario arriscado por trade auto; "
+                        "o volume e calculado pelo stop",
+                 "example": "50"},
             ],
         },
         {
@@ -375,11 +524,11 @@ def chart():
                     error = f"Dados insuficientes para {day} (apenas {len(day_data)} candles M5)"
                     return render_template("chart.html", day=day, image_data=None, summary={}, error=error)
 
-                first_hour = day_data.iloc[:12]
-                ch_high = float(first_hour["high"].max())
-                ch_low = float(first_hour["low"].min())
-                ch_width = ch_high - ch_low
-                proj_dist = ch_width * 2
+                fh = first_hour_channel_levels(day_data)
+                ch_high = fh["channel_high"]
+                ch_low = fh["channel_low"]
+                ch_width = fh["channel_width"]
+                proj_dist = fh["projection_distance"]
 
                 day_high = float(day_data["high"].max())
                 day_low = float(day_data["low"].min())
@@ -852,7 +1001,10 @@ def _build_block_details(state: dict) -> list[dict]:
         },
         {
             "name": "Overtrading", "key": "overtrading",
-            "current": "-",
+            "current": (
+                f"{state.get('consecutive_losses', 0)} perda(s) consecutiva(s)"
+                if state.get("consecutive_losses") else "-"
+            ),
             "limit": f"{limits.overtrading_protection_minutes if limits else 12}min",
             "unit": "", "blocked": bool(flags.get("overtrading")),
         },

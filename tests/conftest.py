@@ -104,6 +104,11 @@ def _patch_and_reload(fixture_data: dict):
 
     sys.modules["MetaTrader5"] = _MockMT5Module(fixture_data)
     importlib.reload(app.core.broker)
+    # Attach-only guard: pretend the desktop terminal is always running so
+    # unit tests don't depend on a real terminal64 process.
+    app.core.broker._terminal_process_running = (
+        lambda proc_name="terminal64.exe": True
+    )
     # Also purge any sub-modules that cached mt5
     for mod_name in list(sys.modules):
         if mod_name.startswith("app.") and "broker" not in mod_name:

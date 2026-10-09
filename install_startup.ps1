@@ -50,9 +50,22 @@ $ArgumentStr = "-ExecutionPolicy Bypass -File `"$StartScript`""
 
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $ArgumentStr -WorkingDirectory $ProjectDir
 
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME" -RandomDelay (New-TimeSpan -Seconds $StartupDelaySeconds)
+# Trigger 1: no logon (delay aleatório para não brigar com o boot)
+$triggerLogon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME" -RandomDelay (New-TimeSpan -Seconds $StartupDelaySeconds)
 
-$principal = New-ScheduledTaskPrincipal -UserID "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
+# Trigger 2: rede de segurança baseada em TEMPO — a cada 5 min o Agendador
+# tenta iniciar a tarefa se ela não estiver rodando. (RestartCount/RestartInterval
+# do Agendador NÃO se aplicam a triggers de logon — só a triggers de tempo.)
+# Com MultipleInstances=IgnoreNew não há instâncias duplicadas.
+$triggerSafe = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5) `
+    -RepetitionDuration (New-TimeSpan -Days 365)
+
+# RunLevel Limited: the watchdog and everything it starts (MT5 + Flask app)
+# run in the normal user context. Running elevated can force the MetaTrader5
+# Python package to launch a SECOND terminal instance (different integrity
+# level), which the broker may register as an extra device.
+$principal = New-ScheduledTaskPrincipal -UserID "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries:$true `
@@ -65,7 +78,7 @@ $settings = New-ScheduledTaskSettingsSet `
 
 $desc = "Trade Assistant OO - auto-start MT5 + Flask app on logon, crash recovery"
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description $desc -Force
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $triggerLogon, $triggerSafe -Principal $principal -Settings $settings -Description $desc -Force
 
 Write-Host "============================================"
 Write-Host "Task '$TaskName' installed successfully!"

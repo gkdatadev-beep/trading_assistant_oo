@@ -134,6 +134,11 @@
       padding-bottom:6px;border-bottom:1px solid var(--border);
       letter-spacing:.05em;text-transform:uppercase;
     }
+    .group-desc{
+      font-size:11px;color:#c0c8d0;line-height:1.55;white-space:pre-line;
+      background:rgba(212,175,55,.05);border:1px solid var(--border);
+      border-radius:6px;padding:8px 10px;margin-bottom:12px;
+    }
     .field{margin-bottom:10px}
     .field label{
       display:block;font-size:11px;font-weight:600;margin-bottom:2px;
@@ -229,11 +234,22 @@ def strategy(data):
         {% for group in param_groups %}
         <div class="col">
           <h3>{{ group.title }}</h3>
+          {% if group.description %}
+          <div class="group-desc">{{ group.description }}</div>
+          {% endif %}
           {% for f in group.fields %}
           <div class="field">
             <label>{{ f.label }} <span class="ex">ex: {{ f.example }}</span></label>
             <div class="hint">{{ f.hint }}</div>
+            {% if f.options %}
+            <select name="{{ f.key }}">
+              {% for o in f.options %}
+              <option value="{{ o }}"{% if f.value|string == o|string %} selected{% endif %}>{{ o }}</option>
+              {% endfor %}
+            </select>
+            {% else %}
             <input name="{{ f.key }}" value="{{ f.value }}" placeholder="{{ f.example }}"{% if f.secret %} type="password" autocomplete="off"{% endif %}>
+            {% endif %}
           </div>
           {% endfor %}
         </div>

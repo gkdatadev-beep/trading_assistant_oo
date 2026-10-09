@@ -169,3 +169,57 @@ class TestApplyToSession:
         assert updated.flag_block_by_time
         assert not updated.flag_block_by_loss
         assert updated.max_daily_profit == 200.0
+
+
+class TestOvertradingStreak:
+    """Perdas consecutivas que acionam a proteção overtrading."""
+
+    def test_count_consecutive_losses_empty(self):
+        assert RiskManager.count_consecutive_losses([]) == 0
+
+    def test_count_consecutive_losses_two(self):
+        trades = [
+            {"ticket": 1, "profit": 10.0, "time": "10:00:00"},
+            {"ticket": 2, "profit": -5.0, "time": "10:05:00"},
+            {"ticket": 3, "profit": -7.0, "time": "10:10:00"},
+        ]
+        assert RiskManager.count_consecutive_losses(trades) == 2
+
+    def test_count_consecutive_losses_win_breaks_streak(self):
+        trades = [
+            {"ticket": 1, "profit": -5.0, "time": "10:00:00"},
+            {"ticket": 2, "profit": 8.0, "time": "10:05:00"},
+        ]
+        assert RiskManager.count_consecutive_losses(trades) == 0
+
+    def test_count_consecutive_losses_three(self):
+        trades = [
+            {"ticket": 1, "profit": 5.0, "time": "09:00:00"},
+            {"ticket": 2, "profit": -1.0, "time": "09:05:00"},
+            {"ticket": 3, "profit": -2.0, "time": "09:10:00"},
+            {"ticket": 4, "profit": -3.0, "time": "09:15:00"},
+        ]
+        assert RiskManager.count_consecutive_losses(trades) == 3
+
+    def test_count_consecutive_losses_sorts_by_time(self):
+        # Entrada fora de ordem — a contagem segue a ordem cronológica
+        trades = [
+            {"ticket": 4, "profit": -3.0, "time": "09:15:00"},
+            {"ticket": 2, "profit": -1.0, "time": "09:05:00"},
+            {"ticket": 3, "profit": -2.0, "time": "09:10:00"},
+            {"ticket": 1, "profit": 5.0, "time": "09:00:00"},
+        ]
+        assert RiskManager.count_consecutive_losses(trades) == 3
+
+    def test_should_trigger_overtrading(self):
+        rm = RiskManager(RiskLimits(overtrading_loss_streak=2))
+        # 2 perdas, nunca travado, sem bloqueio ativo → trava
+        assert rm.should_trigger_overtrading(streak=2, seen=0, active=False)
+        # 1 perda não trava
+        assert not rm.should_trigger_overtrading(streak=1, seen=0, active=False)
+        # mesma sequência já travada → não re-trava
+        assert not rm.should_trigger_overtrading(streak=2, seen=2, active=False)
+        # já ativo → não re-trava
+        assert not rm.should_trigger_overtrading(streak=2, seen=0, active=True)
+        # 3ª perda consecutiva (nova) → trava de novo
+        assert rm.should_trigger_overtrading(streak=3, seen=2, active=False)

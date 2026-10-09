@@ -227,6 +227,7 @@ if ($existing) {
 $null = Ensure-Mt5Running
 
 # ---- Main loop with self-healing and HTTP health checks ----
+try {
 while ($true) {
     $elapsed = (Get-Date) - $windowStart
     if ($elapsed.TotalSeconds -gt $restartWindowSeconds) {
@@ -349,6 +350,11 @@ while ($true) {
 
     Write-Log "Restarting in 5 seconds..."
     Start-Sleep -Seconds 5
+}
+}
+catch {
+    Write-Log "FATAL watchdog error: $_"
+    exit 1
 }
 
 Write-Log "Watchdog exiting"

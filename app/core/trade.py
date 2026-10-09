@@ -29,6 +29,7 @@ class Trade:
     max_profit_seen: float       # Monetary peak of this position
     lock_entry_achieved: bool
     opened_at: Optional[datetime] = None
+    signal: Optional[dict] = None  # probabilidades registradas na abertura
 
     # ── price updates ──────────────────────────────────────
 
@@ -97,4 +98,5 @@ class Trade:
             "max_profit_seen": self.max_profit_seen,
             "lock_entry_achieved": self.lock_entry_achieved,
             "distance_from_entry": self.distance_from_entry(),
+            "signal": self.signal or None,
         }

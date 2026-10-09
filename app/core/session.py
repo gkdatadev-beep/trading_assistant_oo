@@ -36,6 +36,8 @@ class TradingSession:
     overtrading_triggered: bool = False
     overtrading_reason: str = ""
     overtrading_protection_end: Optional[datetime] = None
+    overtrading_streak_seen: int = 0   # streak que já travou os trades
+    consecutive_losses: int = 0        # perdas consecutivas mais recentes
 
     # ── day lifecycle ───────────────────────────────────────
 
@@ -62,6 +64,7 @@ class TradingSession:
         triggered: bool = False,
         reason: str = "",
         protection_end: Optional[datetime] = None,
+        streak_seen: Optional[int] = None,
     ) -> TradingSession:
         return replace(
             self,
@@ -69,6 +72,9 @@ class TradingSession:
             overtrading_triggered=triggered,
             overtrading_reason=reason,
             overtrading_protection_end=protection_end,
+            overtrading_streak_seen=(
+                self.overtrading_streak_seen if streak_seen is None else streak_seen
+            ),
         )
 
     # ── metric updates ──────────────────────────────────────
@@ -80,6 +86,7 @@ class TradingSession:
         current_drawdown: Optional[float] = None,
         operations_count: Optional[int] = None,
         operations_closed: Optional[int] = None,
+        consecutive_losses: Optional[int] = None,
     ) -> TradingSession:
         kwargs: dict = {}
         if daily_profit is not None:
@@ -92,6 +99,8 @@ class TradingSession:
             kwargs["operations_count"] = operations_count
         if operations_closed is not None:
             kwargs["operations_closed"] = operations_closed
+        if consecutive_losses is not None:
+            kwargs["consecutive_losses"] = consecutive_losses
         return replace(self, **kwargs) if kwargs else self
 
     # ── trade management ────────────────────────────────────
@@ -141,6 +150,14 @@ class TradingSession:
             "current_drawdown": self.current_drawdown,
             "operations_count": self.operations_count,
             "operations_closed": self.operations_closed,
+            "overtrading_triggered": self.overtrading_triggered,
+            "overtrading_reason": self.overtrading_reason,
+            "overtrading_protection_end": (
+                self.overtrading_protection_end.isoformat()
+                if self.overtrading_protection_end else None
+            ),
+            "overtrading_streak_seen": self.overtrading_streak_seen,
+            "consecutive_losses": self.consecutive_losses,
             "open_trade": self.open_trade.to_dict() if self.open_trade else None,
             "blocks_active": self.all_blocks_active(),
         }

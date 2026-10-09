@@ -84,6 +84,20 @@ class TestSessionFlags:
         assert s2.overtrading_triggered
         assert s2.overtrading_reason == "Duas perdas"
 
+    def test_with_overtrading_streak_seen(self):
+        s = TradingSession(day_key="2026-07-30")
+        s2 = s.with_overtrading(
+            active=True, triggered=True,
+            reason="2 perdas consecutivas",
+            protection_end=datetime(2026, 7, 30, 14, 0),
+            streak_seen=2,
+        )
+        assert s2.overtrading_streak_seen == 2
+        # release mantém o streak visto (não re-trava na mesma sequência)
+        s3 = s2.with_overtrading(active=False, triggered=False, reason="")
+        assert not s3.flag_overtrading
+        assert s3.overtrading_streak_seen == 2
+
 
 class TestSessionMetrics:
     def test_with_metrics_partial(self):
@@ -121,3 +135,26 @@ class TestSessionSerialization:
         d = s.to_dict()
         assert d["open_trade"]["ticket"] == 1
         assert d["open_trade"]["state"] == "open"
+
+    def test_to_dict_overtrading_fields(self):
+        s = TradingSession(
+            day_key="2026-07-30",
+            flag_overtrading=True,
+            overtrading_triggered=True,
+            overtrading_reason="2 perdas consecutivas",
+            overtrading_protection_end=datetime(2026, 7, 30, 14, 0),
+            overtrading_streak_seen=2,
+            consecutive_losses=2,
+        )
+        d = s.to_dict()
+        assert d["overtrading_triggered"] is True
+        assert d["overtrading_reason"] == "2 perdas consecutivas"
+        assert d["overtrading_protection_end"] == "2026-07-30T14:00:00"
+        assert d["overtrading_streak_seen"] == 2
+        assert d["consecutive_losses"] == 2
+
+    def test_with_metrics_consecutive_losses(self):
+        s = TradingSession(day_key="2026-07-30")
+        s2 = s.with_metrics(consecutive_losses=3)
+        assert s2.consecutive_losses == 3
+        assert s.consecutive_losses == 0

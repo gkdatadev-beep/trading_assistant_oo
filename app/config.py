@@ -47,9 +47,22 @@ DEFAULTS: dict[str, Any] = {
     "TELEGRAM_ENABLED": "0",
     "TELEGRAM_BOT_TOKEN": "",
     "TELEGRAM_CHAT_ID": "",
+    "SWING_CANDLES": "5",
+    "CHANNEL_BREAKOUT_ALERTS": "0",
+    "CHANNEL_ALERT_COOLDOWN_MIN": "5",
+    "AUTO_TRADE_ENABLED": "0",
+    "SIGNAL_ENTRY_BUFFER_USD": "0.5",
+    "SIGNAL_TP_CHANNEL": "2",
+    "SIGNAL_SL_CHANNEL": "1",
+    "SIGNAL_END_HOUR": "12",
+    "AUTO_RISK_USD": "50",
     "MT5_SERVER": "",
     "MT5_LOGIN": "",
     "MT5_PASSWORD": "",
+    # Single terminal identity: exact exe path + attach-only mode, so the app
+    # never spawns a hidden second MT5 terminal (broker device tracking).
+    "MT5_PATH": r"C:\Program Files\MetaTrader 5\terminal64.exe",
+    "MT5_ATTACH_ONLY": "1",
 }
 
 # Keys that must never be echoed/logged in plain text

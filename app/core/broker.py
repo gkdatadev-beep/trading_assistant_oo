@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import os
+import subprocess
 import time
 from datetime import datetime, timedelta, timezone
 from threading import Lock
@@ -32,6 +34,32 @@ MAX_HEALTH_FAILURES = 3
 RECONNECT_BACKOFF_BASE = 5
 RECONNECT_BACKOFF_MAX = 60
 
+# Single terminal identity policy: the app only ATTACHES to the desktop
+# MetaTrader terminal (started by the watchdog). It never launches its own
+# hidden terminal instance, because each terminal login session can be
+# registered by the broker as a separate device.
+DEFAULT_MT5_PATH = r"C:\Program Files\MetaTrader 5\terminal64.exe"
+TERMINAL_PROCESS_NAME = "terminal64.exe"
+
+
+def _terminal_process_running(proc_name: str = TERMINAL_PROCESS_NAME) -> bool:
+    """True when the desktop MetaTrader terminal process is already running.
+
+    Fails open (returns True) if the check itself fails, so a broken probe
+    never blocks the connection.
+    """
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", f"IMAGENAME eq {proc_name}", "/NH"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return proc_name.lower() in result.stdout.lower()
+    except Exception:
+        logger.exception("Terminal process check failed — assuming running")
+        return True
+
 
 class MT5Broker:
     """Singleton connection to MT5 — one instance per process.
@@ -39,13 +67,20 @@ class MT5Broker:
     Includes automatic health-check and self-healing reconnection.
     """
 
-    def __init__(self, login=None, password=None, server=None):
+    def __init__(self, login=None, password=None, server=None,
+                 terminal_path=None, attach_only=True):
         self._connected = False
         self._last_health_check: float = 0.0
         self._health_failures: int = 0
         self._reconnect_lock = Lock()
         self._last_error: str = ""
         self._last_successful_call: float = 0.0
+        self._attach_only: bool = bool(attach_only)
+        self._terminal_path: Optional[str] = terminal_path or DEFAULT_MT5_PATH
+        if self._terminal_path and not os.path.isfile(self._terminal_path):
+            logger.warning("MT5 terminal path not found: %s — letting the "
+                           "MetaTrader5 package resolve it", self._terminal_path)
+            self._terminal_path = None
         try:
             self._mt5_login: Optional[int] = int(login) if login else None
         except (TypeError, ValueError):
@@ -58,8 +93,19 @@ class MT5Broker:
     def initialize(self) -> bool:
         if self._connected:
             return True
+        if self._attach_only and not _terminal_process_running():
+            self._last_error = (
+                "attach-only mode: MT5 terminal is not running — the app will "
+                "NOT launch a second terminal instance; retrying automatically "
+                "once the desktop terminal is open"
+            )
+            logger.warning("%s", self._last_error)
+            return False
         try:
-            self._connected = mt5.initialize()
+            kwargs: dict = {"portable": False}
+            if self._terminal_path:
+                kwargs["path"] = self._terminal_path
+            self._connected = mt5.initialize(**kwargs)
             if self._connected:
                 self._select_symbol()
                 if self._ensure_login():

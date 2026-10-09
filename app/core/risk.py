@@ -19,6 +19,7 @@ class RiskLimits:
     max_profit_retention_pct: float = 50.0
     lock_entry: float = 0.5
     overtrading_protection_minutes: int = 12
+    overtrading_loss_streak: int = 2  # perdas consecutivas que travam os trades
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,46 @@ class RiskManager:
         if trade.profit < self._limits.limite_perda_op:
             return "perda_max_op"
         return None
+
+    # ── overtrading: perdas consecutivas ────────────────────
+
+    @staticmethod
+    def count_consecutive_losses(closed_trades: list[dict]) -> int:
+        """Conta as perdas consecutivas MAIS RECENTES no dia.
+
+        closed_trades: lista de trades fechados com `profit` e,
+        opcionalmente, `time` (HH:MM:SS). A contagem parte do trade
+        mais recente e anda para trás enquanto `profit < 0`.
+        """
+        if not closed_trades:
+            return 0
+        ordered = sorted(
+            closed_trades,
+            key=lambda t: str(t.get("time") or ""),
+            reverse=True,
+        )
+        streak = 0
+        for trade in ordered:
+            try:
+                profit = float(trade.get("profit") or 0)
+            except (TypeError, ValueError):
+                profit = 0.0
+            if profit < 0:
+                streak += 1
+            else:
+                break
+        return streak
+
+    def should_trigger_overtrading(
+        self, streak: int, seen: int, active: bool,
+    ) -> bool:
+        """True quando o streak atual (>= overtrading_loss_streak) ainda
+        não travou os trades e a proteção não está ativa."""
+        return (
+            not active
+            and streak >= max(self._limits.overtrading_loss_streak, 1)
+            and streak > seen
+        )
 
     # ── daily evaluation ────────────────────────────────────
 

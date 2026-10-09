@@ -128,6 +128,48 @@
     .live-badge.hist{background:rgba(212,175,55,.1);color:#D4AF37;border-color:rgba(212,175,55,.25)}
     .live-badge.hist:hover{background:rgba(212,175,55,.2)}
 
+    /* Signal panel (canal 1h) + auto-toggle */
+    .signal-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+    .signal-head .section-header{margin-bottom:0;border-bottom:none;padding-bottom:0}
+    .auto-toggle{
+      padding:10px 18px;border-radius:6px;font-family:var(--font-mono);
+      font-size:14px;font-weight:700;cursor:pointer;transition:all .25s ease;
+      letter-spacing:.04em;border:1px solid transparent;min-width:190px;
+    }
+    .auto-toggle.on{
+      color:#00FF41;background:rgba(0,255,65,.1);
+      border-color:rgba(0,255,65,.45);box-shadow:0 0 14px rgba(0,255,65,.25);
+    }
+    .auto-toggle.off{
+      color:#666;background:rgba(255,255,255,.03);
+      border-color:rgba(255,255,255,.12);
+    }
+    .auto-toggle:hover{border-color:var(--gold-bright)}
+    .auto-toggle:disabled{opacity:.4;cursor:not-allowed}
+    .signal-alert{
+      font-family:var(--font-mono);font-size:14px;font-weight:600;
+      padding:12px 16px;border-radius:6px;margin-bottom:14px;letter-spacing:.02em;
+    }
+    .signal-alert.fired{color:#FFD700;background:rgba(255,215,0,.08);border:1px solid rgba(255,215,0,.45);box-shadow:0 0 16px rgba(255,215,0,.18)}
+    .signal-alert.armed-buy{color:#00FF41;background:rgba(0,255,65,.07);border:1px solid rgba(0,255,65,.4)}
+    .signal-alert.armed-sell{color:#ff4444;background:rgba(255,68,68,.07);border:1px solid rgba(255,68,68,.4)}
+    .signal-alert.watch{color:#888;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1)}
+    .signal-alert.off{color:#666;background:rgba(255,255,255,.02);border:1px dashed rgba(255,255,255,.15)}
+    .signal-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+    .signal-cell{
+      background:#0d0d12;border:1px solid rgba(212,175,55,.12);border-radius:6px;
+      padding:12px 14px;display:flex;flex-direction:column;gap:5px;min-width:0;
+    }
+    .signal-cell .k{font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.08em}
+    .signal-cell .v{font-family:var(--font-mono);font-size:14px;font-weight:600;color:#fff;word-break:break-all}
+    .signal-cell .s{font-family:var(--font-mono);font-size:10px;color:#666}
+    .origin-badge{
+      font-size:10px;font-weight:700;letter-spacing:.06em;padding:3px 8px;
+      border-radius:4px;text-transform:uppercase;font-family:var(--font-ui);
+    }
+    .origin-badge.auto{color:#FFD700;border:1px solid rgba(255,215,0,.45);background:rgba(255,215,0,.08)}
+    .origin-badge.manual{color:#888;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.03)}
+
     /* Cards */
     .card{
       background:rgba(13,13,18,.92);border:1px solid rgba(212,175,55,.15);
@@ -267,6 +309,7 @@
     @media(max-width:900px){
       .bottom-grid{grid-template-columns:1fr}
       .trade-metrics{grid-template-columns:repeat(2,1fr)}
+      .signal-grid{grid-template-columns:repeat(2,1fr)}
     }
     @media(max-width:768px){
       .summary-grid{grid-template-columns:repeat(2,1fr)}
@@ -281,6 +324,7 @@
       .summary-grid{grid-template-columns:1fr}
       .app-wrapper{padding:12px}
       .trade-metrics{grid-template-columns:1fr 1fr}
+      .signal-grid{grid-template-columns:1fr}
       .logo-img{height:96px}
     }
   </style>
@@ -378,6 +422,15 @@ def strategy(data):
   </div>
 
   <div class="card">
+    <div class="signal-head">
+      <div class="section-header">🎯 Sinal — Canal da 1ª Hora</div>
+      <button id="auto-toggle" class="auto-toggle off"
+              title="Liga/desliga a abertura automática de operações">🤖 AUTO-TRADE: OFF</button>
+    </div>
+    <div id="signal-panel">Carregando...</div>
+  </div>
+
+  <div class="card">
     <div class="section-header">Status dos Bloqueios</div>
     <div class="status-grid" id="block-flags"></div>
   </div>
@@ -435,6 +488,39 @@ function statusIcon(name){
   return `<div class="status-icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg></div>`;
 }
 
+function renderSignalPanel(s){
+  if(!s||!s.channel_ready){
+    return '<div class="trade-active-text">⏳ Aguardando a 1ª hora do dia para formar o canal...</div>';
+  }
+  const ch=s.channel||{};
+  const price=s.price!=null?s.price.toFixed(2):'—';
+  const buy=(s.plan&&s.plan.buy)||{};
+  const sell=(s.plan&&s.plan.sell)||{};
+  let statusLine='';
+  if(s.fired_today&&s.signal){
+    const sg=s.signal;
+    statusLine=`<div class="signal-alert fired">🎯 SINAL DISPARADO — ${sg.direction.toUpperCase()} @ ${sg.price} (${sg.time}) | 🎯 TP ${sg.tp} | 🛑 SL ${sg.sl}</div>`;
+  }else if(s.armed==='buy'){
+    statusLine=`<div class="signal-alert armed-buy">📈 ARMADO COMPRA — rompeu o topo do canal | gatilho: ${buy.trigger}</div>`;
+  }else if(s.armed==='sell'){
+    statusLine=`<div class="signal-alert armed-sell">📉 ARMADO VENDA — rompeu o fundo do canal | gatilho: ${sell.trigger}</div>`;
+  }else if(s.cutoff_reached){
+    statusLine=`<div class="signal-alert off">⏸ Janela de sinal encerrada (após ${s.end_hour}:00 do servidor)</div>`;
+  }else{
+    statusLine=`<div class="signal-alert watch">🔍 Vigia de rompimento — BUY quando ${buy.trigger} | SELL quando ${sell.trigger}</div>`;
+  }
+  const f=(v)=>v!=null?v.toFixed(2):'—';
+  return `
+    ${statusLine}
+    <div class="signal-grid">
+      <div class="signal-cell"><span class="k">Canal 1h</span><span class="v">${f(ch.channel_low)} – ${f(ch.channel_high)}</span><span class="s">W=${f(ch.channel_width)} | Proj=${f(ch.projection_distance)}</span></div>
+      <div class="signal-cell"><span class="k">Dia (máx / mín)</span><span class="v">${f(s.day_high)} / ${f(s.day_low)}</span><span class="s">extremos atuais</span></div>
+      <div class="signal-cell"><span class="k">Preço atual</span><span class="v">${price}</span><span class="s">bid</span></div>
+      <div class="signal-cell"><span class="k">Plano COMPRA</span><span class="v">🎯 ${f(buy.tp)} | 🛑 ${f(buy.sl)}</span><span class="s">gatilho ${f(buy.trigger)}</span></div>
+      <div class="signal-cell"><span class="k">Plano VENDA</span><span class="v">🎯 ${f(sell.tp)} | 🛑 ${f(sell.sl)}</span><span class="s">gatilho ${f(sell.trigger)}</span></div>
+    </div>`;
+}
+
 async function refresh(){
   try{
     const picker=document.getElementById('day-picker');
@@ -453,6 +539,14 @@ async function refresh(){
       'Servidor: '+d.server_time+' | Dia: '+d.day_key+
       (d.mt5_connected?' | MT5: <span class="status-ok">✅</span>':'')+
       ((!isHist&&d.block_release_countdown)?' | 🔓 Bloqueios liberam em: '+d.block_release_countdown:'');
+
+    // ── painel de sinal do canal 1h + botão auto-trade ──
+    const tgl=document.getElementById('auto-toggle');
+    const autoOn=!!d.auto_trade_enabled;
+    tgl.className='auto-toggle '+(autoOn?'on':'off');
+    tgl.textContent='🤖 AUTO-TRADE: '+(autoOn?'ON':'OFF');
+    tgl.disabled=isHist;
+    document.getElementById('signal-panel').innerHTML=renderSignalPanel(d.auto_signal||{});
 
     const profit=d.daily_profit||0;
     const peak=d.max_daily_profit||0;
@@ -503,6 +597,9 @@ async function refresh(){
         <div class="trade-head">
           <span class="trade-symbol ${dirClass}">${t.symbol}</span>
           <span class="dir-badge ${dirClass}">${dirLabel}</span>
+          ${d.open_trade_origin==='AUTO'
+            ?'<span class="origin-badge auto">🤖 AUTO</span>'
+            :'<span class="origin-badge manual">✋ MANUAL</span>'}
           <span class="trade-ticket">#${t.ticket}</span>
         </div>
         <div class="trade-metrics">
@@ -517,7 +614,8 @@ async function refresh(){
             <div class="pct ${pnlPos?'pos':'neg'}">${pct>=0?'+':''}${pct.toFixed(2)}%</div>
             <div class="amt ${pnlPos?'pos':'neg'}">${t.profit>=0?'+':''}${t.profit.toFixed(2)}</div>
           </div>
-        </div>`;
+        </div>
+        ${t.signal?`<div class="trade-meta" style="margin-top:4px;color:#D4AF37">🎲 Sinal na entrada: ${t.signal.bias||'-'} ${t.signal.p_tp!=null?Math.round(t.signal.p_tp*100)+'%':'—'} (n=${t.signal.n||'-'})</div>`:''}`;
     }else{
       infoDiv.innerHTML='<div class="trade-active-text">Nenhuma posicao aberta</div>';
     }
@@ -589,19 +687,30 @@ async function refresh(){
       chartDiv.appendChild(gCanvas);
     }else{chartDiv.innerHTML=''}
 
+    const rep=d.signal_report||{};
+    const repLine=rep.n>0
+      ?`<div style="margin-bottom:6px;font-size:12px;color:#D4AF37">🎲 Sinal: acertou ${rep.wins}/${rep.n} (${Math.round(rep.wins/rep.n*100)}%) | P(TP) médio indicado: ${rep.p_tp_medio!=null?Math.round(rep.p_tp_medio*100)+'%':'—'}</div>`
+      :'';
     document.getElementById('closed-trades').innerHTML=closed.length
-      ?`<table class="trades-table">
+      ?`${repLine}<table class="trades-table">
           <thead><tr>
-            <th>Ticket</th><th>Horario</th><th>Lucro</th><th>Resultado</th>
+            <th>Ticket</th><th>Horario</th><th>Lucro</th><th>Resultado</th><th>Origem</th><th>Sinal</th>
           </tr></thead>
           <tbody>
             ${closed.map(ct=>{
               const win=ct.profit>=0;
+              const sig=ct.signal;
+              const sigCell=sig
+                ?((sig.bias==='SELL'?'📉':'📈')+' '+sig.bias+' '+(sig.p_tp!=null?Math.round(sig.p_tp*100)+'%':'—')
+                  +' <span style="opacity:.55">(SL '+(sig.p_sl!=null?Math.round(sig.p_sl*100)+'%':'—')+')</span>')
+                :'—';
               return`<tr>
                 <td>#${ct.ticket}</td>
                 <td>${ct.time}</td>
                 <td class="metric-value ${win?'positive':'negative'}" style="font-size:13px">${ct.profit.toFixed(2)}</td>
                 <td><span class="result-badge ${win?'win':'loss'}">${win?'WIN':'LOSS'}</span></td>
+                <td style="font-size:11px">${ct.origin==='AUTO'?'🤖 AUTO':'✋ MANUAL'}</td>
+                <td style="font-size:11px">${sigCell}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -614,6 +723,10 @@ document.getElementById('day-picker').addEventListener('change',refresh);
 document.getElementById('day-load-btn').addEventListener('click',refresh);
 document.getElementById('live-badge').addEventListener('click',function(){
   document.getElementById('day-picker').value='';refresh();
+});
+document.getElementById('auto-toggle').addEventListener('click',async function(){
+  try{await fetch('/api/auto-toggle',{method:'POST'})}catch(e){}
+  refresh();
 });
 (async function loadDays(){
   try{
